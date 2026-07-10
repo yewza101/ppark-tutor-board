@@ -177,8 +177,17 @@ const Board = () => {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.data.canvas_data) {
-          const parsed = JSON.parse(res.data.canvas_data);
-          setElements(parsed);
+          let parsed = res.data.canvas_data;
+          if (typeof parsed === 'string') {
+            try { parsed = JSON.parse(parsed); } catch(e) { parsed = []; }
+          }
+          // Handle double-encoded
+          if (typeof parsed === 'string') {
+            try { parsed = JSON.parse(parsed); } catch(e) { parsed = []; }
+          }
+          if (Array.isArray(parsed)) {
+            setElements(parsed);
+          }
         }
       } catch (err) {
         console.error('Failed to load board', err);
@@ -289,6 +298,7 @@ const Board = () => {
   const redrawRef = useRef(null);
 
   const drawElement = useCallback((ctx, el, currentZoom) => {
+    if (!el || !el.type) return;
     ctx.beginPath();
     const oldAlpha = ctx.globalAlpha;
     const oldComposite = ctx.globalCompositeOperation;
@@ -560,6 +570,12 @@ const Board = () => {
   const onPointerDown = (e) => {
     setContextMenuPos(null);
     setShowColorPicker(false);
+    
+    if (currentTool === 'text') {
+        const pos = getMousePos(e);
+        setTextInput({ x: pos.x, y: pos.y, text: '' });
+        return;
+    }
     
     if (activePointerId.current !== null) return; // Ignore multitouch secondary fingers
     activePointerId.current = e.pointerId;
@@ -906,11 +922,6 @@ const Board = () => {
       return;
     }
 
-    if (currentTool === 'text') {
-        const pos = getMousePos(e);
-        setTextInput({ x: pos.x, y: pos.y, text: '' });
-        return;
-    }
 
     if (currentTool === 'select' && currentPath.current && currentPath.current.type === 'lasso') {
       const lassoPoints = currentPath.current.points;

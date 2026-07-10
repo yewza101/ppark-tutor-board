@@ -500,18 +500,7 @@ const Board = () => {
         }
       }
       
-      const hitIdx = elementsRef.current.findLastIndex(el => isPointInElement(pos, el, 15));
-      if (hitIdx !== -1) {
-        const el = elementsRef.current[hitIdx];
-        setSelectedElementIds([el.id]);
-        dragContext.current = { 
-          type: 'move', startX: pos.x, startY: pos.y, 
-          origElements: [JSON.parse(JSON.stringify(el))]
-        };
-        isDrawing.current = true;
-        e.target.setPointerCapture(e.pointerId);
-        return;
-      }
+      // Removed single-click hitIdx logic to allow pure lasso drawing
       
       setSelectedElementIds([]);
       currentPath.current = { id: generateId(), type: 'lasso', tool: 'select', points: [pos] };
@@ -569,30 +558,63 @@ const Board = () => {
 
   const erasePixel = (pos) => {
     let changed = false;
-    elementsRef.current.forEach(el => {
+    const newElements = [];
+    
+    for (let j = 0; j < elementsRef.current.length; j++) {
+      const el = elementsRef.current[j];
+      
       if (el.type === 'path') {
-        let elChanged = false;
+        let pathCut = false;
+        const newPaths = [];
+        let currentSubPath = [];
+        
         for (let i = 0; i < el.points.length; i++) {
-          if (el.points[i] !== null) {
-            if (Math.hypot(el.points[i].x - pos.x, el.points[i].y - pos.y) < brushSize) {
-              el.points[i] = null;
-              elChanged = true;
-            } else if (i > 0 && el.points[i-1] !== null) {
-              if (distancePointToSegment(pos, el.points[i-1], el.points[i]) < brushSize) {
-                el.points[i-1] = null;
-                el.points[i] = null;
-                elChanged = true;
-              }
+           let isPointErased = Math.hypot(el.points[i].x - pos.x, el.points[i].y - pos.y) < brushSize;
+           let isSegmentErased = false;
+           
+           if (!isPointErased && i > 0 && currentSubPath.length > 0) {
+               const prevPoint = el.points[i-1];
+               if (distancePointToSegment(pos, prevPoint, el.points[i]) < brushSize) {
+                   isSegmentErased = true;
+               }
+           }
+           
+           if (isPointErased || isSegmentErased) {
+               pathCut = true;
+               if (currentSubPath.length > 0) {
+                   newPaths.push(currentSubPath);
+                   currentSubPath = [];
+               }
+               if (!isPointErased && isSegmentErased) {
+                   currentSubPath.push(el.points[i]);
+               }
+           } else {
+               currentSubPath.push(el.points[i]);
+           }
+        }
+        if (currentSubPath.length > 0) {
+            newPaths.push(currentSubPath);
+        }
+        
+        if (pathCut) {
+            changed = true;
+            if (socket && socket.id) socket.emit('delete-element', { boardId: studentId, elementId: el.id });
+            
+            for (let subPath of newPaths) {
+                const newEl = { ...el, id: generateId(), points: subPath };
+                newElements.push(newEl);
+                if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
             }
-          }
+        } else {
+            newElements.push(el);
         }
-        if (elChanged) {
-           changed = true;
-           if (socket && socket.id) socket.emit('update-element', { boardId: studentId, element: el });
-        }
+      } else {
+        newElements.push(el);
       }
-    });
+    }
+    
     if (changed) {
+      elementsRef.current = newElements;
       setElements([...elementsRef.current]);
       if (redrawRef.current) redrawRef.current();
     }

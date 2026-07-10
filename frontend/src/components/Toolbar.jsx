@@ -43,7 +43,12 @@ const Toolbar = ({
   const needsSize = ['pencil', 'highlighter', 'eraser', 'laser', 'line', 'circle', 'rectangle'].includes(currentTool);
 
   return (
-    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none">
+    <div 
+      className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none"
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+    >
       <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-nowrap items-center gap-2 border border-gray-100 overflow-x-auto overflow-y-hidden no-scrollbar w-full pointer-events-auto">
       
       {/* Tools */}

@@ -649,7 +649,7 @@ const Board = () => {
     startPoint.current = pos;
     e.target.setPointerCapture(e.pointerId);
 
-    if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser') {
+    if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser' || currentTool === 'highlighter') {
       currentPath.current = {
         id: generateId(),
         type: 'path',
@@ -868,8 +868,9 @@ const Board = () => {
 
     if (!currentPath.current) return;
 
-    if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser') {
+    if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser' || currentTool === 'highlighter') {
       currentPath.current.points.push(pos);
+      currentPath.current.path2d = null; // Invalidate cached path
       // Laser trailing effect
       if (currentTool === 'laser' && currentPath.current.points.length > 30) {
         currentPath.current.points.shift();

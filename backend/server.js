@@ -11,10 +11,10 @@ const { authRouter } = require('./routes/auth');
 const adminRouter = require('./routes/admin');
 const boardRouter = require('./routes/board');
 const supabase = require('./db/database');
+const { boardStates, getBoardState, saveBoardState } = require('./boardCache');
 
 const app = express();
 const server = http.createServer(app);
-const boardStates = {}; // Global cache
 const socketRooms = {}; // Track which board each socket is in
 
 // Use a wide cors configuration since this is a local setup
@@ -63,24 +63,7 @@ io.on('connection', (socket) => {
     console.log(`Socket ${socket.id} joined board_${boardId}`);
   });
 
-  // Keep in-memory cache to prevent race conditions during concurrent saves
-  const getBoardState = async (boardId) => {
-    if (!boardStates[boardId]) {
-      const { data: board } = await supabase.from('boards').select('canvas_data').eq('user_id', boardId).single();
-      boardStates[boardId] = board?.canvas_data ? JSON.parse(board.canvas_data) : [];
-    }
-    return boardStates[boardId];
-  };
-
-  const saveBoardState = (boardId) => {
-    supabase.from('boards').upsert({ 
-      user_id: boardId, 
-      canvas_data: JSON.stringify(boardStates[boardId]),
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'user_id' }).then(({ error }) => {
-      if (error) console.error('Error saving board:', error);
-    });
-  };
+  // Cache logic moved to boardCache.js
 
   socket.on('draw-progress', (data) => {
     // data = { boardId, path, socketId }

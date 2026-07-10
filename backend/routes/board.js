@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const supabase = require('../db/database');
 const { JWT_SECRET } = require('./auth');
+const { getBoardState } = require('../boardCache');
 
 const router = express.Router();
 
@@ -32,17 +32,13 @@ router.get('/:userId', async (req, res) => {
     return res.status(403).json({ message: 'Forbidden' });
   }
 
-  const { data: board, error } = await supabase
-    .from('boards')
-    .select('canvas_data')
-    .eq('user_id', targetUserId)
-    .single();
-
-  if (error && error.code !== 'PGRST116') { // PGRST116 is "No rows found"
-    return res.status(500).json({ message: 'Error fetching board' });
+  try {
+    const elements = await getBoardState(targetUserId);
+    res.json({ canvas_data: JSON.stringify(elements) });
+  } catch (err) {
+    console.error('Error fetching board:', err);
+    res.status(500).json({ message: 'Error fetching board' });
   }
-
-  res.json({ canvas_data: board ? board.canvas_data : null });
 });
 
 module.exports = router;

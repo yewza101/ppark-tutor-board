@@ -760,6 +760,7 @@ const Board = () => {
         }
         // Start move drag immediately (unless element is locked)
         if (!hitEl.locked) {
+          startPoint.current = { x: e.clientX, y: e.clientY };
           dragContext.current = { 
             type: 'move', startX: pos.x, startY: pos.y, 
             isMoved: false,

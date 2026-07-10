@@ -135,7 +135,7 @@ const getElementBoundingBox = (el) => {
   } else if (el.type === 'circle') {
      const r = Math.sqrt(Math.pow(el.w, 2) + Math.pow(el.h, 2));
      minX = el.x - r; minY = el.y - r; maxX = el.x + r; maxY = el.y + r;
-  } else if (el.type === 'rectangle' || el.type === 'image' || el.type === 'math') {
+  } else if (el.type === 'rectangle' || el.type === 'image' || el.type === 'math' || el.type === 'postit') {
      minX = el.x; minY = el.y; maxX = el.x + el.w; maxY = el.y + el.h;
   } else if (el.type === 'text') {
      const canvas = document.createElement('canvas');
@@ -471,6 +471,47 @@ const Board = () => {
         ctx.fillStyle = el.color || '#000000';
         ctx.textBaseline = 'top';
         ctx.fillText(el.text || '', el.x || 0, el.y || 0);
+      } else if (el.type === 'postit') {
+        const padding = 12;
+        const fontSize = el.size || 20;
+        ctx.font = `${fontSize}px "Comic Sans MS", "Caveat", cursive, sans-serif`;
+        ctx.textBaseline = 'top';
+        
+        const lines = (el.text || '').split('\n');
+        let maxTextW = 50;
+        for(let line of lines) {
+           const w = ctx.measureText(line).width;
+           if (w > maxTextW) maxTextW = w;
+        }
+        
+        const w = maxTextW + (padding * 2);
+        const h = (lines.length * (fontSize * 1.5)) + (padding * 2);
+        
+        // Save bounds back for hit testing
+        el.w = w;
+        el.h = h;
+        
+        // Shadow
+        ctx.shadowColor = 'rgba(0,0,0,0.15)';
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetX = 3;
+        ctx.shadowOffsetY = 3;
+        
+        // Post-it body
+        ctx.fillStyle = el.color || '#fef08a';
+        ctx.fillRect(el.x || 0, el.y || 0, w, h);
+        
+        // Reset shadow
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.shadowColor = 'transparent';
+        
+        // Text
+        ctx.fillStyle = '#000000';
+        lines.forEach((line, i) => {
+            ctx.fillText(line, (el.x || 0) + padding, (el.y || 0) + padding + (i * fontSize * 1.5));
+        });
       }
       
       // Draw lock indicator for locked elements
@@ -692,10 +733,10 @@ const Board = () => {
     
     if (activePointers.current.size > 2) return;
     
-    if (currentTool === 'text' || currentTool === 'math') {
+    if (currentTool === 'text' || currentTool === 'math' || currentTool === 'postit') {
         if (textInput) return; // Prevent overwriting active text input before onBlur fires
         const pos = getMousePos(e);
-        setTextInput({ x: pos.x, y: pos.y, text: '', isMath: currentTool === 'math' });
+        setTextInput({ x: pos.x, y: pos.y, text: '', isMath: currentTool === 'math', isPostit: currentTool === 'postit', color: brushColor });
         return;
     }
     
@@ -2009,7 +2050,7 @@ const Board = () => {
           </div>
         )}
 
-        {textInput && (
+        {textInput && !textInput.isPostit && (
             <input 
                 ref={(input) => {
                     if (input && !input.dataset.focused) {
@@ -2092,6 +2133,60 @@ const Board = () => {
                     zIndex: 50,
                     padding: '4px 8px',
                     borderRadius: '4px'
+                }}
+            />
+        )}
+        
+        {textInput && textInput.isPostit && (
+            <textarea
+                ref={(input) => {
+                    if (input && !input.dataset.focused) {
+                        input.dataset.focused = "true";
+                        setTimeout(() => input.focus(), 10);
+                    }
+                }}
+                value={textInput.text}
+                onChange={(e) => {
+                    setTextInput({ ...textInput, text: e.target.value });
+                    // Auto-resize textarea height
+                    e.target.style.height = 'auto';
+                    e.target.style.height = e.target.scrollHeight + 'px';
+                }}
+                onBlur={() => {
+                    if (textInput.text.trim()) {
+                        const newEl = {
+                            id: generateId(),
+                            type: 'postit',
+                            tool: 'postit',
+                            x: textInput.x,
+                            y: textInput.y,
+                            text: textInput.text,
+                            color: textInput.color || '#fef08a',
+                            size: 20
+                        };
+                        setElements(prev => {
+                            const newEls = [...prev, newEl];
+                            elementsRef.current = newEls;
+                            return newEls;
+                        });
+                        if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+                        if (fullRedrawRef.current) fullRedrawRef.current();
+                    }
+                    setTextInput(null);
+                }}
+                className="absolute z-50 p-3 shadow-xl resize-none outline-none overflow-hidden"
+                style={{
+                    left: `${textInput.x * zoom + pan.x}px`,
+                    top: `${textInput.y * zoom + pan.y}px`,
+                    backgroundColor: textInput.color || '#fef08a',
+                    color: '#000000',
+                    fontFamily: '"Comic Sans MS", "Caveat", cursive, sans-serif',
+                    fontSize: `${20 * zoom}px`,
+                    minWidth: `${100 * zoom}px`,
+                    minHeight: `${100 * zoom}px`,
+                    whiteSpace: 'pre', // Allows it to stretch horizontally until enter is pressed
+                    transform: 'scale(1)',
+                    pointerEvents: 'auto'
                 }}
             />
         )}

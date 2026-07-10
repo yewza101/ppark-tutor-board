@@ -316,10 +316,7 @@ const Board = () => {
           for (let i = 1; i < el.points.length; i++) {
             ctx.lineTo(el.points[i].x, el.points[i].y);
           }
-          ctx.lineTo(el.points[0].x, el.points[0].y);
           ctx.stroke();
-          ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
-          ctx.fill();
         }
         ctx.setLineDash([]);
         return;
@@ -568,13 +565,15 @@ const Board = () => {
         const newPaths = [];
         let currentSubPath = [];
         
+        const eraserRadius = brushSize / 2;
+        
         for (let i = 0; i < el.points.length; i++) {
-           let isPointErased = Math.hypot(el.points[i].x - pos.x, el.points[i].y - pos.y) < brushSize;
+           let isPointErased = Math.hypot(el.points[i].x - pos.x, el.points[i].y - pos.y) < eraserRadius;
            let isSegmentErased = false;
            
            if (!isPointErased && i > 0 && currentSubPath.length > 0) {
                const prevPoint = el.points[i-1];
-               if (distancePointToSegment(pos, prevPoint, el.points[i]) < brushSize) {
+               if (distancePointToSegment(pos, prevPoint, el.points[i]) < eraserRadius) {
                    isSegmentErased = true;
                }
            }

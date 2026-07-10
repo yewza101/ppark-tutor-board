@@ -159,6 +159,7 @@ const Board = () => {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [dragEndTick, setDragEndTick] = useState(0);
   const [contextMenuPos, setContextMenuPos] = useState(null);
+  const [globalMenuPos, setGlobalMenuPos] = useState(null);
   
   // Drawing state
   const isDrawing = useRef(false);
@@ -590,7 +591,8 @@ const Board = () => {
   };
 
   const onPointerDown = (e) => {
-    setContextMenuPos(null);
+    if (contextMenuPos) setContextMenuPos(null);
+    if (globalMenuPos) setGlobalMenuPos(null);
     setShowColorPicker(false);
     
     if (currentTool === 'text') {
@@ -1110,6 +1112,99 @@ const Board = () => {
     }
   };
 
+  const handlePasteFromClipboard = async (pos) => {
+    try {
+      setGlobalMenuPos(null);
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
+          const blob = await item.getType(item.types.find(t => t.includes('image/')));
+          const file = new File([blob], 'pasted-image.png', { type: blob.type });
+          const filename = `${Date.now()}_${file.name}`;
+          const { data, error } = await supabase.storage.from('board-assests').upload(filename, file);
+          if (error) throw error;
+          const { data: publicUrlData } = supabase.storage.from('board-assests').getPublicUrl(filename);
+          const publicUrl = publicUrlData.publicUrl;
+          
+          const newEl = {
+            id: generateId(),
+            type: 'image',
+            x: (pos.x - pan.x) / zoom,
+            y: (pos.y - pan.y) / zoom,
+            url: publicUrl,
+            w: 400,
+            h: 400
+          };
+          const img = new Image();
+          img.onload = () => {
+            newEl.w = Math.min(img.width, 800);
+            newEl.h = (img.height / img.width) * newEl.w;
+            setElements(prev => {
+                const newEls = [...prev, newEl];
+                elementsRef.current = newEls;
+                return newEls;
+            });
+            if (fullRedrawRef.current) fullRedrawRef.current();
+            if (socket && socket.id) {
+              socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+            }
+          };
+          img.src = publicUrl;
+          return;
+        } else if (item.types.includes('text/plain')) {
+          const blob = await item.getType('text/plain');
+          const text = await blob.text();
+          const newEl = {
+              id: generateId(),
+              type: 'text',
+              tool: 'text',
+              x: (pos.x - pan.x) / zoom,
+              y: (pos.y - pan.y) / zoom,
+              text: text,
+              color: brushColor,
+              size: brushSize * 3,
+              w: 150
+          };
+          setElements(prev => {
+              const newEls = [...prev, newEl];
+              elementsRef.current = newEls;
+              return newEls;
+          });
+          if (fullRedrawRef.current) fullRedrawRef.current();
+          if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to paste:', err);
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+           const newEl = {
+               id: generateId(),
+               type: 'text',
+               tool: 'text',
+               x: (pos.x - pan.x) / zoom,
+               y: (pos.y - pan.y) / zoom,
+               text: text,
+               color: brushColor,
+               size: brushSize * 3,
+               w: 150
+           };
+           setElements(prev => {
+               const newEls = [...prev, newEl];
+               elementsRef.current = newEls;
+               return newEls;
+           });
+           if (fullRedrawRef.current) fullRedrawRef.current();
+           if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+        }
+      } catch(e) {
+          alert('ไม่สามารถอ่านข้อมูลจาก Clipboard ได้ โปรดอนุญาตสิทธิ์ (Permission) หรือคัดลอกข้อความ/รูปภาพก่อนครับ');
+      }
+    }
+  };
+
   const handleUndo = () => {
     if (pastStates.length === 0) return;
     const previous = pastStates[pastStates.length - 1];
@@ -1271,9 +1366,23 @@ const Board = () => {
           onWheel={onWheel}
           onContextMenu={(e) => {
              e.preventDefault();
+             const rect = canvasRef.current.getBoundingClientRect();
+             const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+             
              if (selectedElementIds.length > 0) {
-                 const rect = canvasRef.current.getBoundingClientRect();
-                 setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                 // Check if clicking inside lasso bounds
+                 if (dragContext.current && dragContext.current.gMinX !== undefined) {
+                     if (pos.x >= dragContext.current.gMinX && pos.x <= dragContext.current.gMaxX && pos.y >= dragContext.current.gMinY && pos.y <= dragContext.current.gMaxY) {
+                         setContextMenuPos(pos);
+                         setGlobalMenuPos(null);
+                         return;
+                     }
+                 }
+                 setContextMenuPos(pos);
+                 setGlobalMenuPos(null);
+             } else {
+                 setGlobalMenuPos(pos);
+                 setContextMenuPos(null);
              }
           }}
         />
@@ -1342,6 +1451,63 @@ const Board = () => {
                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 border-8 border-transparent border-t-white border-t-8 drop-shadow-sm"></div>
                    </div>
                )}
+            </div>
+          </div>
+        )}
+
+        {globalMenuPos && (
+          <div 
+            className="absolute z-30 flex flex-col items-center pointer-events-auto animate-in fade-in duration-100"
+            style={{ 
+                left: `${globalMenuPos.x}px`, 
+                top: `${globalMenuPos.y}px`,
+                transform: 'translate(-50%, 15px)'
+            }}
+          >
+            <div className="bg-white shadow-xl rounded-xl flex flex-col min-w-[160px] py-1 border border-gray-100 relative">
+               <button 
+                  onClick={() => handlePasteFromClipboard(globalMenuPos)} 
+                  className="flex items-center gap-3 px-4 py-2 hover:bg-blue-50 hover:text-blue-600 text-gray-700 transition-colors text-sm font-medium"
+               >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  Paste
+               </button>
+               <button 
+                  onClick={() => {
+                      setCurrentTool('text');
+                      setTextInput({ x: (globalMenuPos.x - pan.x)/zoom, y: (globalMenuPos.y - pan.y)/zoom, text: '' });
+                      setGlobalMenuPos(null);
+                  }} 
+                  className="flex items-center gap-3 px-4 py-2 hover:bg-blue-50 hover:text-blue-600 text-gray-700 transition-colors text-sm font-medium"
+               >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+                  Add Text
+               </button>
+               <div className="h-px bg-gray-100 my-1 mx-2"></div>
+               <button 
+                  onClick={() => {
+                      setSelectedElementIds(elementsRef.current.map(el => el.id));
+                      setGlobalMenuPos(null);
+                      setCurrentTool('select');
+                      if (fullRedrawRef.current) fullRedrawRef.current();
+                  }} 
+                  className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium"
+               >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18"></path></svg>
+                  Select All
+               </button>
+               <button 
+                  onClick={() => {
+                      handleClear();
+                      setGlobalMenuPos(null);
+                  }} 
+                  className="flex items-center gap-3 px-4 py-2 hover:bg-red-50 text-red-500 transition-colors text-sm font-medium"
+               >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                  Clear Board
+               </button>
+
+               <div className="absolute -top-2 left-1/2 -translate-x-1/2 border-8 border-transparent border-b-white border-b-8 drop-shadow-sm"></div>
             </div>
           </div>
         )}

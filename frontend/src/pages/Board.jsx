@@ -1325,7 +1325,7 @@ const Board = () => {
 
         {textInput && (
             <input 
-                ref={(input) => input && input.focus()}
+                autoFocus
                 type="text"
                 value={textInput.text}
                 onChange={(e) => setTextInput({ ...textInput, text: e.target.value })}

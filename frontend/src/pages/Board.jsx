@@ -8,6 +8,38 @@ import Toolbar from '../components/Toolbar';
 import { API_URL } from '../config';
 import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+import { jsPDF } from 'jspdf';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import html2canvas from 'html2canvas';
+
+const renderMathToImage = async (latex, color, size) => {
+    return new Promise((resolve) => {
+        const div = document.createElement('div');
+        div.style.position = 'absolute';
+        div.style.top = '-9999px';
+        div.style.left = '-9999px';
+        div.style.color = color;
+        div.style.fontSize = `${size}px`;
+        div.style.background = 'transparent';
+        document.body.appendChild(div);
+        
+        try {
+            katex.render(latex, div, { throwOnError: false, displayMode: true });
+            html2canvas(div, { backgroundColor: null, scale: 2 }).then(canvas => {
+                const dataUrl = canvas.toDataURL('image/png');
+                document.body.removeChild(div);
+                resolve({ dataUrl, width: canvas.width / 2, height: canvas.height / 2 });
+            }).catch(() => {
+                document.body.removeChild(div);
+                resolve(null);
+            });
+        } catch(e) {
+            document.body.removeChild(div);
+            resolve(null);
+        }
+    });
+};
 
 const distancePointToSegment = (p, v, w) => {
   const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
@@ -390,13 +422,12 @@ const Board = () => {
         ctx.lineTo(el.x2 || 0, el.y2 || 0);
         ctx.stroke();
       } else if (el.type === 'rectangle') {
-        ctx.rect(el.x || 0, el.y || 0, el.w || 0, el.h || 0);
-        ctx.stroke();
+        ctx.strokeRect(el.x, el.y, el.w, el.h);
       } else if (el.type === 'circle') {
         const r = Math.sqrt(Math.pow(el.w || 0, 2) + Math.pow(el.h || 0, 2));
         ctx.arc(el.x || 0, el.y || 0, r, 0, 2 * Math.PI);
         ctx.stroke();
-      } else if (el.type === 'image') {
+      } else if (el.type === 'image' || el.type === 'math') {
         if (!imageCacheRef.current[el.url]) {
           const img = new Image();
           img.crossOrigin = 'Anonymous';
@@ -595,10 +626,10 @@ const Board = () => {
     if (globalMenuPos) setGlobalMenuPos(null);
     setShowColorPicker(false);
     
-    if (currentTool === 'text') {
+    if (currentTool === 'text' || currentTool === 'math') {
         if (textInput) return; // Prevent overwriting active text input before onBlur fires
         const pos = getMousePos(e);
-        setTextInput({ x: pos.x, y: pos.y, text: '' });
+        setTextInput({ x: pos.x, y: pos.y, text: '', isMath: currentTool === 'math' });
         return;
     }
     
@@ -1062,23 +1093,175 @@ const Board = () => {
     }
   };
 
+  const handleExport = async () => {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      if (elementsRef.current.length === 0) {
+          alert('ไม่มีข้อมูลให้ Export (No data to export)');
+          return;
+      }
+      
+      elementsRef.current.forEach(el => {
+          const bbox = getElementBoundingBox(el);
+          if (bbox.minX !== undefined) {
+              minX = Math.min(minX, bbox.minX);
+              minY = Math.min(minY, bbox.minY);
+              maxX = Math.max(maxX, bbox.maxX);
+              maxY = Math.max(maxY, bbox.maxY);
+          }
+      });
+      
+      const padding = 50;
+      minX -= padding;
+      minY -= padding;
+      maxX += padding;
+      maxY += padding;
+      
+      const width = maxX - minX;
+      const height = maxY - minY;
+      
+      if (width <= 0 || height <= 0) return;
+      
+      const prevCursor = document.body.style.cursor;
+      document.body.style.cursor = 'wait';
+      
+      try {
+          const exportCanvas = document.createElement('canvas');
+          exportCanvas.width = width;
+          exportCanvas.height = height;
+          const ctx = exportCanvas.getContext('2d');
+          
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          
+          ctx.save();
+          ctx.translate(-minX, -minY);
+          
+          elementsRef.current.forEach(el => drawElement(ctx, el, 1));
+          ctx.restore();
+          
+          const pdf = new jsPDF('p', 'pt', 'a4');
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = pdf.internal.pageSize.getHeight();
+          
+          const a4Ratio = pdfWidth / pdfHeight;
+          const canvasPageHeight = width / a4Ratio;
+          
+          let y = 0;
+          let pageNum = 1;
+          
+          while (y < height) {
+              if (pageNum > 1) pdf.addPage();
+              
+              const sliceCanvas = document.createElement('canvas');
+              sliceCanvas.width = width;
+              sliceCanvas.height = Math.min(canvasPageHeight, height - y);
+              const sliceCtx = sliceCanvas.getContext('2d');
+              
+              sliceCtx.fillStyle = '#ffffff';
+              sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+              
+              sliceCtx.drawImage(
+                  exportCanvas, 
+                  0, y, width, sliceCanvas.height, 
+                  0, 0, width, sliceCanvas.height
+              );
+              
+              const imgData = sliceCanvas.toDataURL('image/jpeg', 0.95);
+              const renderHeight = (sliceCanvas.height / width) * pdfWidth;
+              pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, renderHeight);
+              
+              y += canvasPageHeight;
+              pageNum++;
+          }
+          
+          pdf.save('ppark_board.pdf');
+      } catch (err) {
+          console.error('Export failed', err);
+          alert('Export failed');
+      } finally {
+          document.body.style.cursor = prevCursor;
+      }
+  };
+
   // Toolbar Actions
   const handleUpload = async (file) => {
     try {
-      let uploadFile = file;
       if (file.type === 'application/pdf') {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 2.0 });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        uploadFile = new File([blob], file.name.replace('.pdf', '.png'), { type: 'image/png' });
+        // Show simple loading feedback
+        const prevCursor = document.body.style.cursor;
+        document.body.style.cursor = 'wait';
+        
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
+            let currentY = 50;
+            if (elementsRef.current.length > 0) {
+                let maxY = -Infinity;
+                elementsRef.current.forEach(el => {
+                    const bbox = getElementBoundingBox(el);
+                    if (bbox.maxY !== undefined && bbox.maxY > maxY) maxY = bbox.maxY;
+                });
+                if (maxY !== -Infinity) currentY = maxY + 50;
+            } else {
+                currentY = -pan.y / zoom + 50;
+            }
+
+            const newElements = [];
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const viewport = page.getViewport({ scale: 2.5 }); // High resolution
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                const uploadFile = new File([blob], `${file.name}_page${i}.png`, { type: 'image/png' });
+                
+                const formData = new FormData();
+                formData.append('file', uploadFile);
+                const res = await axios.post(`${API_URL}/api/upload`, formData);
+                const publicUrl = res.data.url;
+                
+                const imgWidth = 800; // Fixed reasonable width on canvas
+                const imgHeight = (viewport.height / viewport.width) * imgWidth;
+                
+                const newEl = {
+                    id: generateId(),
+                    type: 'image',
+                    url: publicUrl,
+                    x: -pan.x / zoom + 50,
+                    y: currentY,
+                    w: imgWidth,
+                    h: imgHeight
+                };
+                
+                newElements.push(newEl);
+                if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+                
+                currentY += imgHeight + 20; // 20px gap
+            }
+            
+            if (newElements.length > 0) {
+                setElements(prev => {
+                    const newEls = [...prev, ...newElements];
+                    elementsRef.current = newEls;
+                    return newEls;
+                });
+                setPastStates(p => [...p, elementsRef.current]);
+                setFutureStates([]);
+                if (fullRedrawRef.current) fullRedrawRef.current();
+            }
+        } finally {
+            document.body.style.cursor = prevCursor;
+        }
+        return;
       }
 
+      // Normal Image Upload
+      let uploadFile = file;
       const formData = new FormData();
       formData.append('file', uploadFile);
       const res = await axios.post(`${API_URL}/api/upload`, formData);
@@ -1091,15 +1274,20 @@ const Board = () => {
         x: -pan.x / zoom + 50,
         y: -pan.y / zoom + 50,
         w: 400,
-        h: uploadFile.type === 'image/png' && file.type === 'application/pdf' ? 565 : 400
+        h: 400
       };
 
       const img = new Image();
       img.onload = () => {
         newEl.w = Math.min(img.width, 800);
         newEl.h = (img.height / img.width) * newEl.w;
-        elementsRef.current = [...elementsRef.current, newEl];
-        setElements([...elementsRef.current]);
+        setElements(prev => {
+          const newEls = [...prev, newEl];
+          elementsRef.current = newEls;
+          return newEls;
+        });
+        setPastStates(p => [...p, elementsRef.current]);
+        setFutureStates([]);
         if (fullRedrawRef.current) fullRedrawRef.current();
         if (socket && socket.id) {
           socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
@@ -1456,6 +1644,7 @@ const Board = () => {
         canUndo={pastStates.length > 0} canRedo={futureStates.length > 0}
         handleUpload={handleUpload}
         bgTemplate={bgTemplate} setBgTemplate={setBgTemplate}
+        handleExport={handleExport}
       />
 
       <div 
@@ -1639,31 +1828,57 @@ const Board = () => {
                 type="text"
                 value={textInput.text}
                 onChange={(e) => setTextInput({ ...textInput, text: e.target.value })}
-                onBlur={() => {
+                onBlur={async () => {
                     if (textInput.text.trim()) {
-                        const dummyCanvas = document.createElement('canvas');
-                        const ctx = dummyCanvas.getContext('2d');
-                        ctx.font = `${brushSize * 3}px sans-serif`;
-                        const metrics = ctx.measureText(textInput.text);
-                        
-                        const newEl = {
-                            id: generateId(),
-                            type: 'text',
-                            tool: 'text',
-                            x: textInput.x,
-                            y: textInput.y,
-                            text: textInput.text,
-                            color: brushColor,
-                            size: brushSize * 3,
-                            w: metrics.width
-                        };
-                        setElements(prev => {
-                            const newEls = [...prev, newEl];
-                            elementsRef.current = newEls;
-                            return newEls;
-                        });
-                        if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
-                        if (fullRedrawRef.current) fullRedrawRef.current();
+                        if (textInput.isMath) {
+                            const result = await renderMathToImage(textInput.text, brushColor, brushSize * 4);
+                            if (result) {
+                                const newEl = {
+                                    id: generateId(),
+                                    type: 'math',
+                                    tool: 'math',
+                                    x: textInput.x,
+                                    y: textInput.y,
+                                    text: textInput.text,
+                                    url: result.dataUrl,
+                                    color: brushColor,
+                                    size: brushSize * 4,
+                                    w: result.width,
+                                    h: result.height
+                                };
+                                setElements(prev => {
+                                    const newEls = [...prev, newEl];
+                                    elementsRef.current = newEls;
+                                    return newEls;
+                                });
+                                if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+                                if (fullRedrawRef.current) fullRedrawRef.current();
+                            }
+                        } else {
+                            const dummyCanvas = document.createElement('canvas');
+                            const ctx = dummyCanvas.getContext('2d');
+                            ctx.font = `${brushSize * 3}px sans-serif`;
+                            const metrics = ctx.measureText(textInput.text);
+                            
+                            const newEl = {
+                                id: generateId(),
+                                type: 'text',
+                                tool: 'text',
+                                x: textInput.x,
+                                y: textInput.y,
+                                text: textInput.text,
+                                color: brushColor,
+                                size: brushSize * 3,
+                                w: metrics.width
+                            };
+                            setElements(prev => {
+                                const newEls = [...prev, newEl];
+                                elementsRef.current = newEls;
+                                return newEls;
+                            });
+                            if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+                            if (fullRedrawRef.current) fullRedrawRef.current();
+                        }
                     }
                     setTextInput(null);
                 }}

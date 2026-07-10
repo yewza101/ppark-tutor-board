@@ -1,7 +1,7 @@
 import { 
   Pencil, Eraser, Circle, Square, Minus, 
   ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon,
-  Highlighter, Type
+  Highlighter, Type, Download, Sigma
 } from 'lucide-react';
 import { useRef } from 'react';
 
@@ -12,7 +12,7 @@ const Toolbar = ({
   handleZoomIn, handleZoomOut, handleResetZoom,
   handleClear, handleUndo, handleRedo,
   canUndo, canRedo, handleUpload,
-  bgTemplate, setBgTemplate
+  bgTemplate, setBgTemplate, handleExport
 }) => {
   const fileInputRef = useRef(null);
   
@@ -22,6 +22,7 @@ const Toolbar = ({
     { id: 'pencil', icon: Pencil, label: 'Pencil' },
     { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
     { id: 'text', icon: Type, label: 'Text' },
+    { id: 'math', icon: Sigma, label: 'Math Equation' },
     { id: 'eraser', icon: Eraser, label: 'Eraser (Normal)' },
     { id: 'eraser-object', icon: Scissors, label: 'Object Eraser' },
     { id: 'laser', icon: Wand2, label: 'Laser Pointer' },
@@ -159,6 +160,11 @@ const Toolbar = ({
         </select>
         
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
+        
+        <button onClick={handleExport} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl" title="Export to PDF">
+          <Download size={20} />
+        </button>
+        
         <button onClick={handleClear} className="p-2 text-red-600 hover:bg-red-50 rounded-xl" title="Clear Canvas">
           <Trash2 size={20} />
         </button>

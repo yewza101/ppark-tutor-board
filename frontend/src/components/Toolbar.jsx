@@ -40,7 +40,8 @@ const Toolbar = ({
   ];
 
   return (
-    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex items-center gap-2 z-10 border border-gray-100 max-w-[95vw] overflow-x-auto overflow-y-hidden no-scrollbar">
+    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none">
+      <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex items-center gap-2 border border-gray-100 overflow-x-auto overflow-y-hidden no-scrollbar w-full pointer-events-auto">
       
       {/* Tools */}
       <div className="flex gap-1 border-r border-gray-200 pr-2 shrink-0">
@@ -112,27 +113,29 @@ const Toolbar = ({
               />
             </button>
           ))}
-          
-          {showSizeSlider && (
-            <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-white shadow-xl border border-gray-200 rounded-xl p-3 z-50 flex flex-col items-center gap-2">
-              <span className="text-xs text-gray-500 whitespace-nowrap font-medium">Thickness: {presetSizes[activeSizeIndex]}px</span>
-              <input 
-                type="range" 
-                min="1" 
-                max="50" 
-                value={presetSizes[activeSizeIndex]}
-                onChange={(e) => {
-                  const newSize = parseInt(e.target.value);
-                  const newPresets = [...presetSizes];
-                  newPresets[activeSizeIndex] = newSize;
-                  setPresetSizes(newPresets);
-                  setBrushSize(newSize);
-                }}
-                className="w-32 accent-blue-600"
-              />
-            </div>
-          )}
         </div>
+      </div>
+      
+      {/* Moved size slider popup outside the overflow-hidden container */}
+      {showSizeSlider && (
+        <div className="mt-2 bg-white shadow-xl border border-gray-200 rounded-xl p-3 z-50 flex flex-col items-center gap-2 pointer-events-auto">
+          <span className="text-xs text-gray-500 whitespace-nowrap font-medium">Thickness: {presetSizes[activeSizeIndex]}px</span>
+          <input 
+            type="range" 
+            min="1" 
+            max="50" 
+            value={presetSizes[activeSizeIndex]}
+            onChange={(e) => {
+              const newSize = parseInt(e.target.value);
+              const newPresets = [...presetSizes];
+              newPresets[activeSizeIndex] = newSize;
+              setPresetSizes(newPresets);
+              setBrushSize(newSize);
+            }}
+            className="w-32 accent-blue-600"
+          />
+        </div>
+      )}
       </div>
 
       {/* History */}

@@ -147,6 +147,8 @@ const Board = () => {
   
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [dragEndTick, setDragEndTick] = useState(0);
+  const [contextMenuPos, setContextMenuPos] = useState(null);
+  const longPressTimerRef = useRef(null);
   
   // Drawing state
   const isDrawing = useRef(false);
@@ -494,6 +496,9 @@ const Board = () => {
   };
 
   const onPointerDown = (e) => {
+    setContextMenuPos(null);
+    setShowColorPicker(false);
+    
     if (activePointerId.current !== null) return; // Ignore multitouch secondary fingers
     activePointerId.current = e.pointerId;
 
@@ -546,6 +551,16 @@ const Board = () => {
           };
           isDrawing.current = true;
           e.target.setPointerCapture(e.pointerId);
+          
+          if (e.pointerType !== 'mouse') {
+              longPressTimerRef.current = setTimeout(() => {
+                  const rect = canvasRef.current.getBoundingClientRect();
+                  setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                  dragContext.current = null;
+                  isDrawing.current = false;
+                  e.target.releasePointerCapture(e.pointerId);
+              }, 500);
+          }
           return;
         }
       }
@@ -730,6 +745,13 @@ const Board = () => {
         return;
       }
       if (dragContext.current) {
+        if (longPressTimerRef.current) {
+            if (Math.hypot(e.clientX - startPoint.current.x, e.clientY - startPoint.current.y) > 5) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+            }
+        }
+        
         const dx = pos.x - dragContext.current.startX;
         const dy = pos.y - dragContext.current.startY;
         
@@ -842,6 +864,11 @@ const Board = () => {
   };
 
   const onPointerUp = (e) => {
+    if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+    }
+    
     if (activePointerId.current !== e.pointerId) return;
     activePointerId.current = null;
     
@@ -1107,32 +1134,8 @@ const Board = () => {
           setSelectedElementIds(newIds);
           if (fullRedrawRef.current) fullRedrawRef.current();
       }
+      setContextMenuPos(null);
   };
-
-  let selectionBox = null;
-  if (selectedElementIds.length > 0 && !isDrawing.current) {
-      let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
-      selectedElementIds.forEach(id => {
-        const el = elementsRef.current.find(e => e.id === id);
-        if (el && el.tool !== 'eraser') {
-          const box = getElementBoundingBox(el);
-          if (box.minX !== undefined) {
-            if (box.minX < gMinX) gMinX = box.minX;
-            if (box.minY < gMinY) gMinY = box.minY;
-            if (box.maxX > gMaxX) gMaxX = box.maxX;
-            if (box.maxY > gMaxY) gMaxY = box.maxY;
-          }
-        }
-      });
-      if (gMinX !== Infinity) {
-          selectionBox = {
-              minX: gMinX * zoom + pan.x,
-              minY: gMinY * zoom + pan.y,
-              maxX: gMaxX * zoom + pan.x,
-              maxY: gMaxY * zoom + pan.y
-          };
-      }
-  }
 
   return (
     <div className="fixed inset-0 flex flex-col bg-gray-100 overflow-hidden touch-none">
@@ -1175,7 +1178,30 @@ const Board = () => {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
           onWheel={onWheel}
-          onContextMenu={(e) => e.preventDefault()}
+          onContextMenu={(e) => {
+             e.preventDefault();
+             if (selectedElementIds.length > 0) {
+                 const pos = getMousePos(e);
+                 let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
+                 selectedElementIds.forEach(id => {
+                     const el = elementsRef.current.find(el => el.id === id);
+                     if (el && el.tool !== 'eraser') {
+                         const box = getElementBoundingBox(el);
+                         if (box.minX !== undefined) {
+                             if (box.minX < gMinX) gMinX = box.minX;
+                             if (box.minY < gMinY) gMinY = box.minY;
+                             if (box.maxX > gMaxX) gMaxX = box.maxX;
+                             if (box.maxY > gMaxY) gMaxY = box.maxY;
+                         }
+                     }
+                 });
+                 const pad = 5 / zoom;
+                 if (pos.x >= gMinX - pad && pos.x <= gMaxX + pad && pos.y >= gMinY - pad && pos.y <= gMaxY + pad) {
+                     const rect = canvasRef.current.getBoundingClientRect();
+                     setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                 }
+             }
+          }}
         />
 
         {/* Render Live Cursors */}
@@ -1206,12 +1232,12 @@ const Board = () => {
           );
         })}
 
-        {selectionBox && (
+        {contextMenuPos && (
           <div 
             className="absolute z-30 flex flex-col items-center pointer-events-auto"
             style={{ 
-                left: `${(selectionBox.minX + selectionBox.maxX) / 2}px`, 
-                top: `${selectionBox.minY - 15}px`,
+                left: `${contextMenuPos.x}px`, 
+                top: `${contextMenuPos.y - 15}px`,
                 transform: 'translate(-50%, -100%)'
             }}
           >

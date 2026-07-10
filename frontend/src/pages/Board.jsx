@@ -299,113 +299,117 @@ const Board = () => {
 
   const drawElement = useCallback((ctx, el, currentZoom) => {
     if (!el || !el.type) return;
-    ctx.beginPath();
-    const oldAlpha = ctx.globalAlpha;
-    const oldComposite = ctx.globalCompositeOperation;
-    
-    ctx.strokeStyle = el.tool === 'eraser' ? 'rgba(0,0,0,1)' : el.color;
-    ctx.globalCompositeOperation = el.tool === 'eraser' ? 'destination-out' : (el.tool === 'highlighter' ? 'multiply' : 'source-over');
-    ctx.globalAlpha = el.tool === 'highlighter' ? 0.4 : 1.0;
-    
-    // Width can be dynamic based on pressure if available in points, but here we just use el.size
-    ctx.lineWidth = el.size;
-
-    if (el.tool === 'laser') {
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = el.color;
-      ctx.strokeStyle = '#ffffff'; 
-      ctx.lineWidth = Math.max(2, el.size / 2);
-    } else {
-      ctx.shadowBlur = 0;
-      ctx.shadowColor = 'transparent';
-    }
-
-    if (el.type === 'lasso') {
-      ctx.strokeStyle = '#3b82f6';
-      ctx.lineWidth = 1 / currentZoom;
-      ctx.setLineDash([5 / currentZoom, 5 / currentZoom]);
+    try {
       ctx.beginPath();
-      if (el.points.length > 0) {
-        ctx.moveTo(el.points[0].x, el.points[0].y);
-        for (let i = 1; i < el.points.length; i++) {
-          ctx.lineTo(el.points[i].x, el.points[i].y);
-        }
-        ctx.stroke();
-      }
-      ctx.setLineDash([]);
-      return;
-    }
-    
-    if (el.type === 'path') {
-      if (el.points.length > 0) {
-        if (!el.path2d) {
-          const p2d = new Path2D();
-          let pts = [];
-          const drawSmooth = (points) => {
-              if (points.length === 1) {
-                  p2d.moveTo(points[0].x, points[0].y);
-                  p2d.lineTo(points[0].x + 0.1, points[0].y + 0.1);
-              } else if (points.length === 2) {
-                  p2d.moveTo(points[0].x, points[0].y);
-                  p2d.lineTo(points[1].x, points[1].y);
-              } else {
-                  p2d.moveTo(points[0].x, points[0].y);
-                  for (let i = 1; i < points.length - 1; i++) {
-                      const xc = (points[i].x + points[i + 1].x) / 2;
-                      const yc = (points[i].y + points[i + 1].y) / 2;
-                      p2d.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
-                  }
-                  p2d.lineTo(points[points.length - 1].x, points[points.length - 1].y);
-              }
-          };
+      const oldAlpha = ctx.globalAlpha;
+      const oldComposite = ctx.globalCompositeOperation;
+      
+      ctx.strokeStyle = el.tool === 'eraser' ? 'rgba(0,0,0,1)' : el.color;
+      ctx.globalCompositeOperation = el.tool === 'eraser' ? 'destination-out' : (el.tool === 'highlighter' ? 'multiply' : 'source-over');
+      ctx.globalAlpha = el.tool === 'highlighter' ? 0.4 : 1.0;
+      
+      ctx.lineWidth = el.size || 5;
 
-          for (let i = 0; i < el.points.length; i++) {
-            if (el.points[i] === null) {
-              if (pts.length > 0) drawSmooth(pts);
-              pts = [];
-            } else {
-              pts.push(el.points[i]);
-            }
+      if (el.tool === 'laser') {
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = el.color || '#ff0000';
+        ctx.strokeStyle = '#ffffff'; 
+        ctx.lineWidth = Math.max(2, (el.size || 5) / 2);
+      } else {
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+      }
+
+      if (el.type === 'lasso') {
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 1 / (currentZoom || 1);
+        ctx.setLineDash([5 / (currentZoom || 1), 5 / (currentZoom || 1)]);
+        ctx.beginPath();
+        if (el.points && el.points.length > 0) {
+          ctx.moveTo(el.points[0].x, el.points[0].y);
+          for (let i = 1; i < el.points.length; i++) {
+            if (el.points[i]) ctx.lineTo(el.points[i].x, el.points[i].y);
           }
-          if (pts.length > 0) drawSmooth(pts);
-          el.path2d = p2d;
+          ctx.stroke();
         }
-        ctx.stroke(el.path2d);
+        ctx.setLineDash([]);
+        return;
       }
-    } else if (el.type === 'line') {
-      ctx.moveTo(el.x1, el.y1);
-      ctx.lineTo(el.x2, el.y2);
-      ctx.stroke();
-    } else if (el.type === 'rectangle') {
-      ctx.rect(el.x, el.y, el.w, el.h);
-      ctx.stroke();
-    } else if (el.type === 'circle') {
-      const r = Math.sqrt(Math.pow(el.w, 2) + Math.pow(el.h, 2));
-      ctx.arc(el.x, el.y, r, 0, 2 * Math.PI);
-      ctx.stroke();
-    } else if (el.type === 'image') {
-      if (!imageCacheRef.current[el.url]) {
-        const img = new Image();
-        img.crossOrigin = 'Anonymous';
-        img.src = el.url;
-        img.onload = () => {
-          imageCacheRef.current[el.url] = img;
-          if (fullRedrawRef.current) fullRedrawRef.current();
-        };
-        imageCacheRef.current[el.url] = 'loading';
-      } else if (imageCacheRef.current[el.url] !== 'loading') {
-        const img = imageCacheRef.current[el.url];
-        ctx.drawImage(img, el.x, el.y, el.w, el.h);
+      
+      if (el.type === 'path') {
+        if (el.points && el.points.length > 0) {
+          if (!el.path2d) {
+            const p2d = new Path2D();
+            let pts = [];
+            const drawSmooth = (points) => {
+                if (!points || points.length === 0) return;
+                if (points.length === 1) {
+                    p2d.moveTo(points[0].x, points[0].y);
+                    p2d.lineTo(points[0].x + 0.1, points[0].y + 0.1);
+                } else if (points.length === 2) {
+                    p2d.moveTo(points[0].x, points[0].y);
+                    p2d.lineTo(points[1].x, points[1].y);
+                } else {
+                    p2d.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length - 1; i++) {
+                        const xc = (points[i].x + points[i + 1].x) / 2;
+                        const yc = (points[i].y + points[i + 1].y) / 2;
+                        p2d.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+                    }
+                    p2d.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+                }
+            };
+
+            for (let i = 0; i < el.points.length; i++) {
+              if (el.points[i] === null || el.points[i] === undefined) {
+                if (pts.length > 0) drawSmooth(pts);
+                pts = [];
+              } else {
+                pts.push(el.points[i]);
+              }
+            }
+            if (pts.length > 0) drawSmooth(pts);
+            el.path2d = p2d;
+          }
+          ctx.stroke(el.path2d);
+        }
+      } else if (el.type === 'line') {
+        ctx.moveTo(el.x1 || 0, el.y1 || 0);
+        ctx.lineTo(el.x2 || 0, el.y2 || 0);
+        ctx.stroke();
+      } else if (el.type === 'rectangle') {
+        ctx.rect(el.x || 0, el.y || 0, el.w || 0, el.h || 0);
+        ctx.stroke();
+      } else if (el.type === 'circle') {
+        const r = Math.sqrt(Math.pow(el.w || 0, 2) + Math.pow(el.h || 0, 2));
+        ctx.arc(el.x || 0, el.y || 0, r, 0, 2 * Math.PI);
+        ctx.stroke();
+      } else if (el.type === 'image') {
+        if (!imageCacheRef.current[el.url]) {
+          const img = new Image();
+          img.crossOrigin = 'Anonymous';
+          img.src = el.url;
+          img.onload = () => {
+            imageCacheRef.current[el.url] = img;
+            if (fullRedrawRef.current) fullRedrawRef.current();
+          };
+          imageCacheRef.current[el.url] = 'loading';
+        } else if (imageCacheRef.current[el.url] !== 'loading') {
+          const img = imageCacheRef.current[el.url];
+          ctx.drawImage(img, el.x || 0, el.y || 0, el.w || 100, el.h || 100);
+        }
+      } else if (el.type === 'text') {
+        ctx.font = `${el.size || 20}px sans-serif`;
+        ctx.fillStyle = el.color || '#000000';
+        ctx.textBaseline = 'top';
+        ctx.fillText(el.text || '', el.x || 0, el.y || 0);
       }
-    } else if (el.type === 'text') {
-      ctx.font = `${el.size}px sans-serif`;
-      ctx.fillStyle = el.color;
-      ctx.textBaseline = 'top';
-      ctx.fillText(el.text, el.x, el.y);
+      
+      ctx.globalAlpha = oldAlpha;
+      ctx.globalCompositeOperation = oldComposite;
+    } catch (err) {
+      console.error('Failed to draw element:', el, err);
     }
-    
-    ctx.globalAlpha = oldAlpha;
-    ctx.globalCompositeOperation = oldComposite;
   }, []);
 
   const redrawBase = useCallback(() => {

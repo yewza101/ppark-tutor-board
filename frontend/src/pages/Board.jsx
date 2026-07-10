@@ -267,6 +267,58 @@ const Board = () => {
         const r = Math.sqrt(Math.pow(el.w, 2) + Math.pow(el.h, 2));
         ctx.arc(el.x, el.y, r, 0, 2 * Math.PI);
         ctx.stroke();
+      } else if (el.type === 'image') {
+        if (!imageCacheRef.current[el.url]) {
+          const img = new Image();
+          img.crossOrigin = 'Anonymous';
+          img.src = el.url;
+          img.onload = () => {
+            imageCacheRef.current[el.url] = img;
+            redraw();
+          };
+          imageCacheRef.current[el.url] = 'loading';
+        } else if (imageCacheRef.current[el.url] !== 'loading') {
+          const img = imageCacheRef.current[el.url];
+          ctx.drawImage(img, el.x, el.y, el.w, el.h);
+        }
+      }
+
+      // Draw Selection Box
+      if (selectedElementId === el.id) {
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 2 / zoom;
+        ctx.setLineDash([5 / zoom, 5 / zoom]);
+        
+        let minX, minY, maxX, maxY;
+        if (el.type === 'path' && el.points && el.points.length > 0) {
+           minX = Math.min(...el.points.map(p => p.x));
+           minY = Math.min(...el.points.map(p => p.y));
+           maxX = Math.max(...el.points.map(p => p.x));
+           maxY = Math.max(...el.points.map(p => p.y));
+        } else if (el.type === 'line') {
+           minX = Math.min(el.x, el.x1);
+           minY = Math.min(el.y, el.y1);
+           maxX = Math.max(el.x, el.x1);
+           maxY = Math.max(el.y, el.y1);
+        } else if (el.type === 'circle') {
+           const r = Math.sqrt(Math.pow(el.w, 2) + Math.pow(el.h, 2));
+           minX = el.x - r; minY = el.y - r; maxX = el.x + r; maxY = el.y + r;
+        } else if (el.type === 'rectangle' || el.type === 'image') {
+           minX = el.x; minY = el.y; maxX = el.x + el.w; maxY = el.y + el.h;
+        }
+        
+        if (minX !== undefined) {
+          const pad = 5 / zoom;
+          ctx.strokeRect(minX - pad, minY - pad, maxX - minX + pad*2, maxY - minY + pad*2);
+          ctx.setLineDash([]);
+          
+          if (el.type === 'image') {
+            ctx.fillStyle = '#ffffff';
+            const hs = 8 / zoom;
+            ctx.fillRect(maxX - hs/2, maxY - hs/2, hs, hs);
+            ctx.strokeRect(maxX - hs/2, maxY - hs/2, hs, hs);
+          }
+        }
       }
     };
 
@@ -349,36 +401,6 @@ const Board = () => {
       return;
     }
 
-    if (currentTool === 'select' && dragContext.current) {
-      const dx = pos.x - dragContext.current.startX;
-      const dy = pos.y - dragContext.current.startY;
-      const elIdx = elementsRef.current.findIndex(el => el.id === dragContext.current.elementId);
-      if (elIdx !== -1) {
-        const el = elementsRef.current[elIdx];
-        if (dragContext.current.type === 'move') {
-          if (el.type === 'path') {
-             el.points = el.points.map((p, i) => ({ x: dragContext.current.origPoints[i].x + dx, y: dragContext.current.origPoints[i].y + dy }));
-          } else {
-             el.x = dragContext.current.origX + dx;
-             el.y = dragContext.current.origY + dy;
-             if (el.type === 'line') {
-               el.x1 = dragContext.current.origX1 + dx;
-               el.y1 = dragContext.current.origY1 + dy;
-             }
-          }
-        } else if (dragContext.current.type === 'scale' && el.type === 'image') {
-          el.w = Math.max(20, dragContext.current.origW + dx);
-          el.h = Math.max(20, dragContext.current.origH + dy);
-        }
-        setElements([...elementsRef.current]);
-        requestAnimationFrame(redraw);
-        if (socket && socket.id && shouldEmit) {
-          socket.emit('update-element', { boardId: studentId, element: el });
-          lastEmitTime.current = now;
-        }
-      }
-      return;
-    }
 
     if (currentTool === 'eraser-object') {
       const pos = getMousePos(e);
@@ -458,6 +480,37 @@ const Board = () => {
       const dy = e.clientY - startPoint.current.y;
       setPan({ x: pan.x + dx, y: pan.y + dy });
       startPoint.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
+    if (currentTool === 'select' && dragContext.current) {
+      const dx = pos.x - dragContext.current.startX;
+      const dy = pos.y - dragContext.current.startY;
+      const elIdx = elementsRef.current.findIndex(el => el.id === dragContext.current.elementId);
+      if (elIdx !== -1) {
+        const el = elementsRef.current[elIdx];
+        if (dragContext.current.type === 'move') {
+          if (el.type === 'path') {
+             el.points = el.points.map((p, i) => ({ x: dragContext.current.origPoints[i].x + dx, y: dragContext.current.origPoints[i].y + dy }));
+          } else {
+             el.x = dragContext.current.origX + dx;
+             el.y = dragContext.current.origY + dy;
+             if (el.type === 'line') {
+               el.x1 = dragContext.current.origX1 + dx;
+               el.y1 = dragContext.current.origY1 + dy;
+             }
+          }
+        } else if (dragContext.current.type === 'scale' && el.type === 'image') {
+          el.w = Math.max(20, dragContext.current.origW + dx);
+          el.h = Math.max(20, dragContext.current.origH + dy);
+        }
+        setElements([...elementsRef.current]);
+        requestAnimationFrame(redraw);
+        if (socket && socket.id && shouldEmit) {
+          socket.emit('update-element', { boardId: studentId, element: el });
+          lastEmitTime.current = now;
+        }
+      }
       return;
     }
 

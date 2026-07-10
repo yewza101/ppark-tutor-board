@@ -11,11 +11,12 @@ const { authRouter } = require('./routes/auth');
 const adminRouter = require('./routes/admin');
 const boardRouter = require('./routes/board');
 const supabase = require('./db/database');
-const { boardStates, getBoardState, saveBoardState } = require('./boardCache');
+const { boardStates, getBoardState, saveBoardState, flushSave } = require('./boardCache');
 
 const app = express();
 const server = http.createServer(app);
 const socketRooms = {}; // Track which board each socket is in
+const boardConnectionCount = {}; // Track how many sockets are in each board
 
 // Use a wide cors configuration since this is a local setup
 const io = new Server(server, {
@@ -26,14 +27,17 @@ const io = new Server(server, {
 });
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '10mb' }));
 
 // API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/boards', boardRouter);
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB max per file
+});
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
@@ -60,7 +64,8 @@ io.on('connection', (socket) => {
   socket.on('join-board', (boardId) => {
     socket.join(`board_${boardId}`);
     socketRooms[socket.id] = boardId;
-    console.log(`Socket ${socket.id} joined board_${boardId}`);
+    boardConnectionCount[boardId] = (boardConnectionCount[boardId] || 0) + 1;
+    console.log(`Socket ${socket.id} joined board_${boardId} (${boardConnectionCount[boardId]} connected)`);
   });
 
   // Cache logic moved to boardCache.js
@@ -123,11 +128,21 @@ io.on('connection', (socket) => {
     socket.to(`board_${data.boardId}`).emit('cursor-move', { ...data, socketId: socket.id });
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     const boardId = socketRooms[socket.id];
     if (boardId) {
       socket.to(`board_${boardId}`).emit('cursor-leave', socket.id);
       delete socketRooms[socket.id];
+      
+      // Decrement connection count and evict cache if no one is left
+      boardConnectionCount[boardId] = (boardConnectionCount[boardId] || 1) - 1;
+      if (boardConnectionCount[boardId] <= 0) {
+        delete boardConnectionCount[boardId];
+        // Flush pending save to DB first, then free RAM
+        await flushSave(boardId);
+        delete boardStates[boardId];
+        console.log(`Board ${boardId} evicted from memory (no users remaining)`);
+      }
     }
     console.log('User disconnected:', socket.id);
   });

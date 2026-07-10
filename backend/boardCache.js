@@ -39,6 +39,22 @@ const saveBoardState = (boardId) => {
     }, 2000);
 };
 
+const flushSave = async (boardId) => {
+    if (saveTimeouts[boardId]) {
+        clearTimeout(saveTimeouts[boardId]);
+        delete saveTimeouts[boardId];
+    }
+    if (boardStates[boardId]) {
+        const data = JSON.stringify(boardStates[boardId]);
+        const { error } = await supabase.from('boards').upsert({ 
+            user_id: boardId, 
+            canvas_data: data,
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        if (error) console.error('Error flushing board:', boardId, error);
+    }
+};
+
 const flushAllSaves = async () => {
     const promises = [];
     for (const boardId in saveTimeouts) {
@@ -57,4 +73,4 @@ const flushAllSaves = async () => {
     console.log(`Flushed ${promises.length} pending board saves.`);
 };
 
-module.exports = { boardStates, getBoardState, saveBoardState, flushAllSaves };
+module.exports = { boardStates, getBoardState, saveBoardState, flushSave, flushAllSaves };

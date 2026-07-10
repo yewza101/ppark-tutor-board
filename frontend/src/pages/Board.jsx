@@ -1277,7 +1277,7 @@ const Board = () => {
             
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
-                const viewport = page.getViewport({ scale: 2.5 }); // High resolution
+                const viewport = page.getViewport({ scale: 1.5 }); // Good quality, memory-efficient
                 const canvas = document.createElement('canvas');
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;

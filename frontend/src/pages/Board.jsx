@@ -588,6 +588,7 @@ const Board = () => {
     setShowColorPicker(false);
     
     if (currentTool === 'text') {
+        if (textInput) return; // Prevent overwriting active text input before onBlur fires
         const pos = getMousePos(e);
         setTextInput({ x: pos.x, y: pos.y, text: '' });
         return;

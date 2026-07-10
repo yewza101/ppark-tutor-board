@@ -31,7 +31,7 @@ router.use(verifyAdmin);
 router.get('/students', async (req, res) => {
   const { data: students, error } = await supabase
     .from('users')
-    .select('id, username, created_at')
+    .select('id, username, created_at, group_name')
     .eq('role', 'student')
     .order('id', { ascending: false });
 
@@ -43,7 +43,7 @@ router.get('/students', async (req, res) => {
 
 // Create a new student
 router.post('/students', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, group_name } = req.body;
   if (!username || !password) {
     return res.status(400).json({ message: 'Username and password are required' });
   }
@@ -52,8 +52,8 @@ router.post('/students', async (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     const { data, error } = await supabase
       .from('users')
-      .insert([{ username, password_hash: hash, role: 'student' }])
-      .select('id, username');
+      .insert([{ username, password_hash: hash, role: 'student', group_name: group_name || 'General' }])
+      .select('id, username, group_name');
       
     if (error) {
       if (error.code === '23505') { // Unique violation

@@ -9,6 +9,7 @@ const AdminDashboard = () => {
   const [students, setStudents] = useState([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   
@@ -44,12 +45,13 @@ const AdminDashboard = () => {
     setSuccess('');
     try {
       await axios.post(`${API_URL}/api/admin/students`, 
-        { username: newUsername, password: newPassword },
+        { username: newUsername, password: newPassword, group_name: newGroupName },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setSuccess('Student added successfully!');
       setNewUsername('');
       setNewPassword('');
+      setNewGroupName('');
       fetchStudents();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to add student');
@@ -137,6 +139,16 @@ const AdminDashboard = () => {
                     placeholder="password123"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Group / Class Name</label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    placeholder="e.g. Class 1, Math 101"
+                  />
+                </div>
                 <button
                   type="submit"
                   className="w-full px-4 py-2.5 text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors font-medium"
@@ -150,60 +162,71 @@ const AdminDashboard = () => {
           {/* Student List */}
           <div className="md:col-span-2">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <h2 className="text-xl font-bold mb-6">Student List</h2>
+              <h2 className="text-xl font-bold mb-6">Student Groups</h2>
               
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b-2 border-gray-100">
-                      <th className="py-3 px-4 text-sm font-semibold text-gray-600">ID</th>
-                      <th className="py-3 px-4 text-sm font-semibold text-gray-600">Username</th>
-                      <th className="py-3 px-4 text-sm font-semibold text-gray-600">Created At</th>
-                      <th className="py-3 px-4 text-sm font-semibold text-gray-600 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {students.map((student) => (
-                      <tr key={student.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                        <td className="py-3 px-4 text-sm text-gray-500">#{student.id}</td>
-                        <td className="py-3 px-4 font-medium">{student.username}</td>
-                        <td className="py-3 px-4 text-sm text-gray-500">
-                          {new Date(student.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="py-3 px-4 flex justify-end gap-2">
-                          <button
-                            onClick={() => navigate(`/board/${student.id}`)}
-                            title="Open Board"
-                            className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                          >
-                            <ExternalLink size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleResetPassword(student.id)}
-                            title="Reset Password"
-                            className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors"
-                          >
-                            <KeyRound size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(student.id)}
-                            title="Delete Student"
-                            className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {students.length === 0 && (
-                      <tr>
-                        <td colSpan="4" className="py-8 text-center text-gray-500">
-                          No students found. Add one to get started.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="space-y-8">
+                {students.length === 0 ? (
+                  <div className="py-8 text-center text-gray-500">No students found</div>
+                ) : (
+                  Object.entries(
+                    students.reduce((acc, student) => {
+                      const group = student.group_name || 'General';
+                      if (!acc[group]) acc[group] = [];
+                      acc[group].push(student);
+                      return acc;
+                    }, {})
+                  ).map(([groupName, groupStudents]) => (
+                    <div key={groupName} className="border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-gray-700">
+                        {groupName} <span className="text-sm font-normal text-gray-500 ml-2">({groupStudents.length} students)</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-gray-100">
+                              <th className="py-3 px-4 text-sm font-semibold text-gray-600">Username</th>
+                              <th className="py-3 px-4 text-sm font-semibold text-gray-600">Created At</th>
+                              <th className="py-3 px-4 text-sm font-semibold text-gray-600 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {groupStudents.map((student) => (
+                              <tr key={student.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                                <td className="py-3 px-4 font-medium">{student.username}</td>
+                                <td className="py-3 px-4 text-sm text-gray-500">
+                                  {new Date(student.created_at).toLocaleDateString()}
+                                </td>
+                                <td className="py-3 px-4 flex justify-end gap-2">
+                                  <button
+                                    onClick={() => navigate(`/board/${student.id}`)}
+                                    title="Open Board"
+                                    className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                                  >
+                                    <ExternalLink size={18} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleResetPassword(student.id)}
+                                    title="Reset Password"
+                                    className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors"
+                                  >
+                                    <KeyRound size={18} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(student.id)}
+                                    title="Delete Student"
+                                    className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

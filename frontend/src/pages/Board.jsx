@@ -348,7 +348,7 @@ const Board = () => {
       if (el.type === 'path') {
         if (el.points && el.points.length > 0) {
           let p2dToDraw = el.path2d;
-          if (!p2dToDraw) {
+          if (!p2dToDraw || !(p2dToDraw instanceof Path2D)) {
             const p2d = new Path2D();
             let pts = [];
             const drawSmooth = (points) => {
@@ -1193,6 +1193,7 @@ const Board = () => {
               const offset = 20 / zoom;
               if (clone.type === 'path') {
                   clone.points = clone.points.map(p => p ? { x: p.x + offset, y: p.y + offset } : null);
+                  clone.path2d = null;
               } else {
                   clone.x += offset;
                   clone.y += offset;

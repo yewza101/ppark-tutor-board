@@ -269,14 +269,20 @@ const Board = () => {
     });
 
     newSocket.on('update-element', (data) => {
-      elementsRef.current = elementsRef.current.map(el => el.id === data.element.id ? data.element : el);
-      setElements([...elementsRef.current]);
+      setElements(prev => {
+         const newEls = prev.map(el => el.id === data.element.id ? data.element : el);
+         elementsRef.current = newEls;
+         return newEls;
+      });
       if (fullRedrawRef.current) fullRedrawRef.current();
     });
 
     newSocket.on('delete-element', ({ elementId }) => {
-      elementsRef.current = elementsRef.current.filter(el => el.id !== elementId);
-      setElements([...elementsRef.current]);
+      setElements(prev => {
+         const newEls = prev.filter(el => el.id !== elementId);
+         elementsRef.current = newEls;
+         return newEls;
+      });
       if (fullRedrawRef.current) fullRedrawRef.current();
     });
 
@@ -304,9 +310,8 @@ const Board = () => {
   const drawElement = useCallback((ctx, el, currentZoom) => {
     if (!el || !el.type) return;
     try {
+      ctx.save();
       ctx.beginPath();
-      const oldAlpha = ctx.globalAlpha;
-      const oldComposite = ctx.globalCompositeOperation;
       
       ctx.strokeStyle = el.tool === 'eraser' ? 'rgba(0,0,0,1)' : el.color;
       ctx.globalCompositeOperation = el.tool === 'eraser' ? 'destination-out' : (el.tool === 'highlighter' ? 'multiply' : 'source-over');
@@ -408,11 +413,10 @@ const Board = () => {
         ctx.textBaseline = 'top';
         ctx.fillText(el.text || '', el.x || 0, el.y || 0);
       }
-      
-      ctx.globalAlpha = oldAlpha;
-      ctx.globalCompositeOperation = oldComposite;
     } catch (err) {
       console.error('Failed to draw element:', el, err);
+    } finally {
+      ctx.restore();
     }
   }, []);
 
@@ -754,7 +758,10 @@ const Board = () => {
     }
     
     if (changed) {
-      setElements([...elementsRef.current]);
+      setElements(prev => {
+        elementsRef.current = [...prev];
+        return elementsRef.current;
+      });
       if (fullRedrawRef.current) fullRedrawRef.current();
     }
   };
@@ -764,8 +771,11 @@ const Board = () => {
     if (elIdx !== -1) {
       const deletedEl = elementsRef.current[elIdx];
       if (deletedEl.id) {
-        elementsRef.current.splice(elIdx, 1);
-        setElements([...elementsRef.current]);
+        setElements(prev => {
+          const newEls = prev.filter(e => e.id !== deletedEl.id);
+          elementsRef.current = newEls;
+          return newEls;
+        });
         if (fullRedrawRef.current) fullRedrawRef.current();
         if (socket && socket.id) {
           socket.emit('delete-element', { boardId: studentId, elementId: deletedEl.id });
@@ -882,7 +892,10 @@ const Board = () => {
         }
         
         if (shouldEmit) lastEmitTime.current = now;
-        setElements([...elementsRef.current]);
+        setElements(prev => {
+            elementsRef.current = [...prev];
+            return elementsRef.current;
+        });
         requestAnimationFrame(() => { if (fullRedrawRef.current) fullRedrawRef.current(); });
         return;
       }
@@ -1140,8 +1153,10 @@ const Board = () => {
           return el;
       });
       if (changed) {
-          elementsRef.current = newElements;
-          setElements(newElements);
+          setElements(prev => {
+              elementsRef.current = newElements;
+              return newElements;
+          });
           if (fullRedrawRef.current) fullRedrawRef.current();
       }
       setShowColorPicker(false);
@@ -1155,8 +1170,10 @@ const Board = () => {
           }
           return true;
       });
-      elementsRef.current = remainingElements;
-      setElements(remainingElements);
+      setElements(prev => {
+          elementsRef.current = remainingElements;
+          return remainingElements;
+      });
       setSelectedElementIds([]);
       activeLassoPathRef.current = null;
       if (fullRedrawRef.current) fullRedrawRef.current();
@@ -1190,8 +1207,11 @@ const Board = () => {
       });
       
       if (clonedElements.length > 0) {
-          elementsRef.current = [...elementsRef.current, ...clonedElements];
-          setElements([...elementsRef.current]);
+          setElements(prev => {
+              const newEls = [...prev, ...clonedElements];
+              elementsRef.current = newEls;
+              return newEls;
+          });
           
           if (activeLassoPathRef.current) {
               const offset = 20 / zoom;
@@ -1347,8 +1367,11 @@ const Board = () => {
                             size: brushSize * 3,
                             w: metrics.width
                         };
-                        elementsRef.current = [...elementsRef.current, newEl];
-                        setElements(elementsRef.current);
+                        setElements(prev => {
+                            const newEls = [...prev, newEl];
+                            elementsRef.current = newEls;
+                            return newEls;
+                        });
                         if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
                         if (fullRedrawRef.current) fullRedrawRef.current();
                     }

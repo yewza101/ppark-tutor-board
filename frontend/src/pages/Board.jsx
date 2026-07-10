@@ -42,6 +42,7 @@ const Board = () => {
   const startPoint = useRef(null);
   const activePointerId = useRef(null);
   const remotePaths = useRef({});
+  const lastEmitTime = useRef(0);
 
   // Initialize Socket and Fetch initial data
   useEffect(() => {
@@ -302,8 +303,10 @@ const Board = () => {
 
   const onPointerMove = (e) => {
     const pos = getMousePos(e);
+    const now = Date.now();
+    const shouldEmit = now - lastEmitTime.current > 30;
     
-    if (socket && socket.id) {
+    if (socket && socket.id && shouldEmit) {
       // Throttle cursor emit slightly in a real app, but raw is fine for local
       socket.emit('cursor-move', {
         boardId: studentId,
@@ -343,12 +346,13 @@ const Board = () => {
     // Request animation frame for smooth redraw
     requestAnimationFrame(redraw);
     
-    if (socket && socket.id) {
+    if (socket && socket.id && shouldEmit) {
       socket.emit('draw-progress', { 
         boardId: studentId, 
         path: currentPath.current, 
         socketId: socket.id 
       });
+      lastEmitTime.current = now;
     }
   };
 

@@ -18,6 +18,7 @@ const distancePointToSegment = (p, v, w) => {
 };
 
 const isPointInElement = (pt, el, radius) => {
+  if (el.tool === 'eraser') return false;
   const hitRadius = radius + (el.size ? el.size / 2 : 5);
   
   if (el.type === 'path') {
@@ -369,7 +370,7 @@ const Board = () => {
       let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
       selectedElementIds.forEach(id => {
         const el = elementsRef.current.find(e => e.id === id);
-        if (el) {
+        if (el && el.tool !== 'eraser') {
           const box = getElementBoundingBox(el);
           if (box.minX !== undefined) {
             if (box.minX < gMinX) gMinX = box.minX;
@@ -450,7 +451,7 @@ const Board = () => {
         let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
         selectedElementIds.forEach(id => {
           const el = elementsRef.current.find(e => e.id === id);
-          if (el) {
+          if (el && el.tool !== 'eraser') {
             const box = getElementBoundingBox(el);
             if (box.minX !== undefined) {
               if (box.minX < gMinX) gMinX = box.minX;

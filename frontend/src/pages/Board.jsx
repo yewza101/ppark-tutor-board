@@ -137,6 +137,7 @@ const Board = () => {
   const [cursors, setCursors] = useState({});
   const imageCacheRef = useRef({});
   const [selectedElementIds, setSelectedElementIds] = useState([]);
+  const activeLassoPathRef = useRef(null);
   const dragContext = useRef(null);
   
   // Drawing state
@@ -316,8 +317,6 @@ const Board = () => {
           for (let i = 1; i < el.points.length; i++) {
             ctx.lineTo(el.points[i].x, el.points[i].y);
           }
-          // Auto-close the lasso path to show the selection area
-          ctx.lineTo(el.points[0].x, el.points[0].y);
           ctx.stroke();
         }
         ctx.setLineDash([]);
@@ -398,7 +397,18 @@ const Board = () => {
         ctx.lineWidth = 2 / zoom;
         ctx.setLineDash([5 / zoom, 5 / zoom]);
         const pad = 5 / zoom;
-        ctx.strokeRect(gMinX - pad, gMinY - pad, gMaxX - gMinX + pad*2, gMaxY - gMinY + pad*2);
+        
+        if (activeLassoPathRef.current && activeLassoPathRef.current.length > 0) {
+            ctx.beginPath();
+            ctx.moveTo(activeLassoPathRef.current[0].x, activeLassoPathRef.current[0].y);
+            for (let i = 1; i < activeLassoPathRef.current.length; i++) {
+                ctx.lineTo(activeLassoPathRef.current[i].x, activeLassoPathRef.current[i].y);
+            }
+            ctx.lineTo(activeLassoPathRef.current[0].x, activeLassoPathRef.current[0].y);
+            ctx.stroke();
+        } else {
+            ctx.strokeRect(gMinX - pad, gMinY - pad, gMaxX - gMinX + pad*2, gMaxY - gMinY + pad*2);
+        }
         ctx.setLineDash([]);
         
         ctx.fillStyle = '#ffffff';
@@ -481,7 +491,8 @@ const Board = () => {
           dragContext.current = { 
             type: 'scale', startX: pos.x, startY: pos.y, 
             gMinX, gMinY, gMaxX, gMaxY,
-            origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id))))
+            origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id)))),
+            origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
           };
           isDrawing.current = true;
           e.target.setPointerCapture(e.pointerId);
@@ -491,7 +502,8 @@ const Board = () => {
         if (pos.x >= gMinX - pad && pos.x <= gMaxX + pad && pos.y >= gMinY - pad && pos.y <= gMaxY + pad) {
           dragContext.current = { 
             type: 'move', startX: pos.x, startY: pos.y, 
-            origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id))))
+            origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id)))),
+            origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
           };
           isDrawing.current = true;
           e.target.setPointerCapture(e.pointerId);
@@ -502,6 +514,7 @@ const Board = () => {
       // Removed single-click hitIdx logic to allow pure lasso drawing
       
       setSelectedElementIds([]);
+      activeLassoPathRef.current = null;
       currentPath.current = { id: generateId(), type: 'lasso', tool: 'select', points: [pos] };
       isDrawing.current = true;
       e.target.setPointerCapture(e.pointerId);
@@ -716,6 +729,23 @@ const Board = () => {
             socket.emit('update-element', { boardId: studentId, element: el });
           }
         });
+        
+        if (dragContext.current.origLassoPath) {
+            if (dragContext.current.type === 'move') {
+                activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => ({
+                    x: p.x + dx, y: p.y + dy
+                }));
+            } else if (dragContext.current.type === 'scale') {
+                const origW = dragContext.current.gMaxX - dragContext.current.gMinX;
+                const newW = Math.max(20, origW + dx);
+                const scale = origW === 0 ? 1 : newW / origW;
+                activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => ({
+                    x: dragContext.current.gMinX + (p.x - dragContext.current.gMinX) * scale,
+                    y: dragContext.current.gMinY + (p.y - dragContext.current.gMinY) * scale
+                }));
+            }
+        }
+        
         if (shouldEmit) lastEmitTime.current = now;
         setElements([...elementsRef.current]);
         requestAnimationFrame(redraw);
@@ -783,6 +813,14 @@ const Board = () => {
           }
         });
         setSelectedElementIds(selectedIds);
+        if (selectedIds.length > 0) {
+            activeLassoPathRef.current = lassoPoints;
+        } else {
+            activeLassoPathRef.current = null;
+        }
+      } else {
+        setSelectedElementIds([]);
+        activeLassoPathRef.current = null;
       }
       currentPath.current = null;
       isDrawing.current = false;

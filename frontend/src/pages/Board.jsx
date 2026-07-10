@@ -92,8 +92,8 @@ const isPointInElement = (pt, el, radius) => {
            distancePointToSegment(pt, v2, v3) < hitRadius ||
            distancePointToSegment(pt, v3, v4) < hitRadius ||
            distancePointToSegment(pt, v4, v1) < hitRadius;
-  } else if (el.type === 'image' || el.type === 'math') {
-      return pt.x >= el.x && pt.x <= el.x + el.w && pt.y >= el.y && pt.y <= el.y + el.h;
+  } else if (el.type === 'image' || el.type === 'math' || el.type === 'postit') {
+      return pt.x >= el.x && pt.x <= (el.x + (el.w || 100)) && pt.y >= el.y && pt.y <= (el.y + (el.h || 100));
   } else if (el.type === 'text') {
       const box = getElementBoundingBox(el);
       return pt.x >= box.minX && pt.x <= box.maxX && pt.y >= box.minY && pt.y <= box.maxY;
@@ -2162,7 +2162,9 @@ const Board = () => {
                             y: textInput.y,
                             text: textInput.text,
                             color: textInput.color || '#fef08a',
-                            size: 20
+                            size: 20,
+                            w: 100,
+                            h: 100
                         };
                         setElements(prev => {
                             const newEls = [...prev, newEl];

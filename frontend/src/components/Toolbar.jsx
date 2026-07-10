@@ -39,12 +39,15 @@ const Toolbar = ({
     '#22c55e', '#3b82f6', '#a855f7', '#ec4899'
   ];
 
+  const needsColor = ['pencil', 'highlighter', 'text', 'math', 'line', 'circle', 'rectangle', 'laser'].includes(currentTool);
+  const needsSize = ['pencil', 'highlighter', 'eraser', 'laser', 'line', 'circle', 'rectangle'].includes(currentTool);
+
   return (
     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none">
       <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex items-center gap-2 border border-gray-100 overflow-x-auto overflow-y-hidden no-scrollbar w-full pointer-events-auto">
       
       {/* Tools */}
-      <div className="flex gap-1 border-r border-gray-200 pr-2 shrink-0">
+      <div className={`flex gap-1 pr-2 shrink-0 ${needsColor || needsSize ? 'border-r border-gray-200' : ''}`}>
         {tools.map(tool => (
           <button
             key={tool.id}
@@ -62,8 +65,11 @@ const Toolbar = ({
       </div>
 
       {/* Color Palette & Size */}
+      {(needsColor || needsSize) && (
       <div className="flex items-center gap-2 border-r border-gray-200 pr-2 pl-1 shrink-0">
-        <div className="flex flex-wrap w-32 gap-1 justify-center">
+        {needsColor && (
+          <>
+            <div className="flex flex-wrap w-32 gap-1 justify-center">
           {presetColors.map(color => (
             <button
               key={color}
@@ -86,7 +92,10 @@ const Toolbar = ({
             title="Custom Color"
           />
         </div>
+        </>
+        )}
 
+        {needsSize && (
         <div className="relative flex items-center gap-1 mx-1">
           {[0, 1, 2].map((idx) => (
             <button
@@ -114,10 +123,12 @@ const Toolbar = ({
             </button>
           ))}
         </div>
+        )}
       </div>
+      )}
       
       {/* Moved size slider popup outside the overflow-hidden container */}
-      {showSizeSlider && (
+      {showSizeSlider && needsSize && (
         <div className="mt-2 bg-white shadow-xl border border-gray-200 rounded-xl p-3 z-50 flex flex-col items-center gap-2 pointer-events-auto">
           <span className="text-xs text-gray-500 whitespace-nowrap font-medium">Thickness: {presetSizes[activeSizeIndex]}px</span>
           <input 

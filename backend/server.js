@@ -137,3 +137,14 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
+const gracefulShutdown = async () => {
+  console.log('Received shutdown signal. Flushing pending saves...');
+  const { flushAllSaves } = require('./boardCache');
+  await flushAllSaves();
+  console.log('Shutdown complete.');
+  process.exit(0);
+};
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);

@@ -6,7 +6,16 @@ const saveTimeouts = {};
 const getBoardState = async (boardId) => {
     if (!boardStates[boardId]) {
       const { data: board } = await supabase.from('boards').select('canvas_data').eq('user_id', boardId).single();
-      boardStates[boardId] = board?.canvas_data ? JSON.parse(board.canvas_data) : [];
+      let parsed = [];
+      if (board?.canvas_data) {
+          try {
+              parsed = JSON.parse(board.canvas_data);
+              if (typeof parsed === 'string') parsed = JSON.parse(parsed); // Double encode fix
+          } catch(e) {
+              console.error('Error parsing canvas data for board:', boardId, e);
+          }
+      }
+      boardStates[boardId] = Array.isArray(parsed) ? parsed : [];
     }
     return boardStates[boardId];
 };
@@ -30,4 +39,22 @@ const saveBoardState = (boardId) => {
     }, 2000);
 };
 
-module.exports = { boardStates, getBoardState, saveBoardState };
+const flushAllSaves = async () => {
+    const promises = [];
+    for (const boardId in saveTimeouts) {
+        clearTimeout(saveTimeouts[boardId]);
+        const data = JSON.stringify(boardStates[boardId]);
+        promises.push(
+            supabase.from('boards').upsert({ 
+                user_id: boardId, 
+                canvas_data: data,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' })
+        );
+        delete saveTimeouts[boardId];
+    }
+    await Promise.all(promises);
+    console.log(`Flushed ${promises.length} pending board saves.`);
+};
+
+module.exports = { boardStates, getBoardState, saveBoardState, flushAllSaves };

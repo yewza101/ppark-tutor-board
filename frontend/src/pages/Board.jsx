@@ -91,7 +91,11 @@ const getElementBoundingBox = (el) => {
   } else if (el.type === 'rectangle' || el.type === 'image') {
      minX = el.x; minY = el.y; maxX = el.x + el.w; maxY = el.y + el.h;
   } else if (el.type === 'text') {
-     minX = el.x; minY = el.y; maxX = el.x + (el.w || el.size * el.text.length * 0.6); maxY = el.y + el.size;
+     const canvas = document.createElement('canvas');
+     const ctx = canvas.getContext('2d');
+     ctx.font = `${el.size || 20}px sans-serif`;
+     const metrics = ctx.measureText(el.text || '');
+     minX = el.x; minY = el.y; maxX = el.x + metrics.width; maxY = el.y + (el.size || 20);
   }
   return { minX, minY, maxX, maxY };
 };
@@ -537,6 +541,14 @@ const Board = () => {
     redrawDraftRef.current = redrawDraft;
     fullRedrawRef.current = fullRedraw;
     fullRedraw();
+    
+    // Cleanup unused images from memory to prevent memory leaks
+    const currentUrls = new Set(elements.filter(el => el.type === 'image' && el.url).map(el => el.url));
+    Object.keys(imageCacheRef.current).forEach(url => {
+        if (!currentUrls.has(url)) {
+            delete imageCacheRef.current[url];
+        }
+    });
   }, [elements, fullRedraw, redrawBase, redrawDraft]);
 
   // Handle window resize
@@ -764,7 +776,7 @@ const Board = () => {
   const onPointerMove = (e) => {
     const pos = getMousePos(e);
     const now = Date.now();
-    const shouldEmit = now - lastEmitTime.current > 30;
+    const shouldEmit = now - lastEmitTime.current > 50; // Throttle to 20fps to save bandwidth
     
     if (socket && socket.id && shouldEmit) {
       // Throttle cursor emit slightly in a real app, but raw is fine for local

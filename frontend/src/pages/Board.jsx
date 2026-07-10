@@ -145,6 +145,9 @@ const Board = () => {
   const activeLassoPathRef = useRef(null);
   const dragContext = useRef(null);
   
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [dragEndTick, setDragEndTick] = useState(0);
+  
   // Drawing state
   const isDrawing = useRef(false);
   const currentPath = useRef(null);
@@ -883,6 +886,7 @@ const Board = () => {
       }
       dragContext.current = null;
       isDrawing.current = false;
+      setDragEndTick(t => t + 1);
     }
 
     if (isDrawing.current && currentPath.current) {
@@ -1030,6 +1034,106 @@ const Board = () => {
   const handleZoomOut = () => setZoom(z => Math.max(0.1, z - 0.2));
   const handleResetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
+  const handleChangeSelectionColor = (newColor) => {
+      let changed = false;
+      const newElements = elementsRef.current.map(el => {
+          if (selectedElementIds.includes(el.id)) {
+              changed = true;
+              const updatedEl = { ...el, color: newColor };
+              if (socket && socket.id) socket.emit('update-element', { boardId: studentId, element: updatedEl });
+              return updatedEl;
+          }
+          return el;
+      });
+      if (changed) {
+          elementsRef.current = newElements;
+          setElements(newElements);
+          if (fullRedrawRef.current) fullRedrawRef.current();
+      }
+      setShowColorPicker(false);
+  };
+
+  const handleDeleteSelection = () => {
+      const remainingElements = elementsRef.current.filter(el => {
+          if (selectedElementIds.includes(el.id)) {
+              if (socket && socket.id) socket.emit('delete-element', { boardId: studentId, elementId: el.id });
+              return false;
+          }
+          return true;
+      });
+      elementsRef.current = remainingElements;
+      setElements(remainingElements);
+      setSelectedElementIds([]);
+      activeLassoPathRef.current = null;
+      if (fullRedrawRef.current) fullRedrawRef.current();
+  };
+
+  const handleDuplicateSelection = () => {
+      const newIds = [];
+      const clonedElements = [];
+      
+      elementsRef.current.forEach(el => {
+          if (selectedElementIds.includes(el.id)) {
+              const clone = JSON.parse(JSON.stringify(el));
+              clone.id = generateId();
+              
+              const offset = 20 / zoom;
+              if (clone.type === 'path') {
+                  clone.points = clone.points.map(p => p ? { x: p.x + offset, y: p.y + offset } : null);
+              } else {
+                  clone.x += offset;
+                  clone.y += offset;
+                  if (clone.type === 'line') {
+                      clone.x1 += offset;
+                      clone.y1 += offset;
+                  }
+              }
+              
+              clonedElements.push(clone);
+              newIds.push(clone.id);
+              if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: clone, socketId: socket.id });
+          }
+      });
+      
+      if (clonedElements.length > 0) {
+          elementsRef.current = [...elementsRef.current, ...clonedElements];
+          setElements([...elementsRef.current]);
+          
+          if (activeLassoPathRef.current) {
+              const offset = 20 / zoom;
+              activeLassoPathRef.current = activeLassoPathRef.current.map(p => ({ x: p.x + offset, y: p.y + offset }));
+          }
+          
+          setSelectedElementIds(newIds);
+          if (fullRedrawRef.current) fullRedrawRef.current();
+      }
+  };
+
+  let selectionBox = null;
+  if (selectedElementIds.length > 0 && !isDrawing.current) {
+      let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
+      selectedElementIds.forEach(id => {
+        const el = elementsRef.current.find(e => e.id === id);
+        if (el && el.tool !== 'eraser') {
+          const box = getElementBoundingBox(el);
+          if (box.minX !== undefined) {
+            if (box.minX < gMinX) gMinX = box.minX;
+            if (box.minY < gMinY) gMinY = box.minY;
+            if (box.maxX > gMaxX) gMaxX = box.maxX;
+            if (box.maxY > gMaxY) gMaxY = box.maxY;
+          }
+        }
+      });
+      if (gMinX !== Infinity) {
+          selectionBox = {
+              minX: gMinX * zoom + pan.x,
+              minY: gMinY * zoom + pan.y,
+              maxX: gMaxX * zoom + pan.x,
+              maxY: gMaxY * zoom + pan.y
+          };
+      }
+  }
+
   return (
     <div className="fixed inset-0 flex flex-col bg-gray-100 overflow-hidden touch-none">
       <div className="absolute top-4 left-4 z-10 flex gap-2">
@@ -1084,7 +1188,6 @@ const Board = () => {
               className="absolute pointer-events-none z-20 flex flex-col items-center"
               style={{ left: `${left}px`, top: `${top}px` }}
             >
-              {/* Cursor Arrow/Dot */}
               <svg 
                 width="24" height="24" viewBox="0 0 24 24" fill={cursor.color} 
                 xmlns="http://www.w3.org/2000/svg"
@@ -1093,7 +1196,6 @@ const Board = () => {
               >
                 <path d="M4 2L20 12L12 14L9 22L4 2Z" stroke="white" strokeWidth="2" strokeLinejoin="round"/>
               </svg>
-              {/* Username Tag */}
               <span 
                 className="mt-1 px-2 py-0.5 text-xs font-semibold text-white rounded shadow-sm whitespace-nowrap ml-6"
                 style={{ backgroundColor: cursor.color }}
@@ -1103,6 +1205,46 @@ const Board = () => {
             </div>
           );
         })}
+
+        {selectionBox && (
+          <div 
+            className="absolute z-30 flex flex-col items-center pointer-events-auto"
+            style={{ 
+                left: `${(selectionBox.minX + selectionBox.maxX) / 2}px`, 
+                top: `${selectionBox.minY - 15}px`,
+                transform: 'translate(-50%, -100%)'
+            }}
+          >
+            <div className="bg-white/90 backdrop-blur-md shadow-lg rounded-xl flex items-center px-2 py-1.5 gap-1 border border-gray-100 relative">
+               <button onClick={() => setShowColorPicker(!showColorPicker)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-700 transition-colors" title="Change Color">
+                  <div className="w-5 h-5 rounded-full border border-gray-300 shadow-inner flex items-center justify-center">
+                    <span className="block w-3 h-3 rounded-full bg-blue-500"></span>
+                  </div>
+               </button>
+               <div className="w-px h-5 bg-gray-200 mx-1"></div>
+               <button onClick={handleDuplicateSelection} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-700 transition-colors" title="Duplicate">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+               </button>
+               <button onClick={handleDeleteSelection} className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors" title="Delete">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+               </button>
+
+               {showColorPicker && (
+                   <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-white shadow-xl rounded-xl border border-gray-200 p-2 grid grid-cols-4 gap-2 w-max animate-in fade-in zoom-in duration-200">
+                       {['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#000000', '#64748b', '#ffffff'].map(c => (
+                           <button 
+                               key={c}
+                               onClick={() => handleChangeSelectionColor(c)}
+                               className="w-6 h-6 rounded-full border border-gray-200 shadow-sm hover:scale-110 transition-transform"
+                               style={{ backgroundColor: c }}
+                           />
+                       ))}
+                       <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 border-8 border-transparent border-t-white border-t-8 drop-shadow-sm"></div>
+                   </div>
+               )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

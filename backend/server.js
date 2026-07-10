@@ -41,7 +41,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   const filename = `${Date.now()}_${Math.random().toString(36).substring(2)}.${ext}`;
   
   const { data, error } = await supabase.storage
-    .from('board-assets')
+    .from('board-assests')
     .upload(filename, req.file.buffer, {
       contentType: req.file.mimetype,
       upsert: false
@@ -49,7 +49,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     
   if (error) return res.status(500).json({ message: error.message });
   
-  const { data: publicUrlData } = supabase.storage.from('board-assets').getPublicUrl(filename);
+  const { data: publicUrlData } = supabase.storage.from('board-assests').getPublicUrl(filename);
   res.json({ url: publicUrlData.publicUrl });
 });
 

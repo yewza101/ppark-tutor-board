@@ -235,7 +235,8 @@ const Board = () => {
 
     const drawElement = (el) => {
       ctx.beginPath();
-      ctx.strokeStyle = el.tool === 'eraser' ? '#ffffff' : el.color;
+      ctx.strokeStyle = el.tool === 'eraser' ? 'rgba(0,0,0,1)' : el.color;
+        ctx.globalCompositeOperation = el.tool === 'eraser' ? 'destination-out' : 'source-over';
       ctx.lineWidth = el.size;
 
       if (el.tool === 'laser') {
@@ -383,7 +384,7 @@ const Board = () => {
 
     if (currentTool === 'select') {
       const pos = getMousePos(e);
-      const hitIdx = elementsRef.current.findLastIndex(el => isPointInElement(pos, el, brushSize));
+      const hitIdx = elementsRef.current.findLastIndex(el => isPointInElement(pos, el, 15));
       if (hitIdx !== -1) {
         const el = elementsRef.current[hitIdx];
         setSelectedElementId(el.id);

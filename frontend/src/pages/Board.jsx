@@ -347,7 +347,8 @@ const Board = () => {
       
       if (el.type === 'path') {
         if (el.points && el.points.length > 0) {
-          if (!el.path2d) {
+          let p2dToDraw = el.path2d;
+          if (!p2dToDraw) {
             const p2d = new Path2D();
             let pts = [];
             const drawSmooth = (points) => {
@@ -378,9 +379,10 @@ const Board = () => {
               }
             }
             if (pts.length > 0) drawSmooth(pts);
-            el.path2d = p2d;
+            try { el.path2d = p2d; } catch (e) {} // Ignore if object is frozen by React
+            p2dToDraw = p2d;
           }
-          ctx.stroke(el.path2d);
+          ctx.stroke(p2dToDraw);
         }
       } else if (el.type === 'line') {
         ctx.moveTo(el.x1 || 0, el.y1 || 0);
@@ -1345,7 +1347,13 @@ const Board = () => {
 
         {textInput && (
             <input 
-                autoFocus
+                ref={(input) => {
+                    if (input && !input.dataset.focused) {
+                        input.dataset.focused = "true";
+                        // Use a short timeout to ensure DOM is ready and iOS keyboard triggers
+                        setTimeout(() => input.focus(), 10);
+                    }
+                }}
                 type="text"
                 value={textInput.text}
                 onChange={(e) => setTextInput({ ...textInput, text: e.target.value })}

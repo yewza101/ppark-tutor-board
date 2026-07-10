@@ -1,6 +1,7 @@
 import { 
   Pencil, Eraser, Circle, Square, Minus, 
-  ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon
+  ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon,
+  Highlighter, Type
 } from 'lucide-react';
 import { useRef } from 'react';
 
@@ -10,7 +11,8 @@ const Toolbar = ({
   brushSize, setBrushSize,
   handleZoomIn, handleZoomOut, handleResetZoom,
   handleClear, handleUndo, handleRedo,
-  canUndo, canRedo, handleUpload
+  canUndo, canRedo, handleUpload,
+  bgTemplate, setBgTemplate
 }) => {
   const fileInputRef = useRef(null);
   
@@ -18,6 +20,8 @@ const Toolbar = ({
     { id: 'select', icon: MousePointer2, label: 'Select' },
     { id: 'pan', icon: Hand, label: 'Pan (Move)' },
     { id: 'pencil', icon: Pencil, label: 'Pencil' },
+    { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
+    { id: 'text', icon: Type, label: 'Text' },
     { id: 'eraser', icon: Eraser, label: 'Eraser (Normal)' },
     { id: 'eraser-object', icon: Scissors, label: 'Object Eraser' },
     { id: 'laser', icon: Wand2, label: 'Laser Pointer' },
@@ -141,6 +145,20 @@ const Toolbar = ({
           />
 
           <div className="w-px h-6 bg-gray-300 mx-1"></div>
+          
+        <select 
+            value={bgTemplate} 
+            onChange={(e) => setBgTemplate(e.target.value)}
+            className="p-1.5 text-sm border border-gray-200 rounded-lg text-gray-700 bg-white hover:bg-gray-50 outline-none"
+            title="Paper Background"
+        >
+            <option value="blank">Blank</option>
+            <option value="lined">Lined Paper</option>
+            <option value="grid">Grid Paper</option>
+            <option value="dot">Dot Grid</option>
+        </select>
+        
+        <div className="w-px h-6 bg-gray-300 mx-1"></div>
         <button onClick={handleClear} className="p-2 text-red-600 hover:bg-red-50 rounded-xl" title="Clear Canvas">
           <Trash2 size={20} />
         </button>

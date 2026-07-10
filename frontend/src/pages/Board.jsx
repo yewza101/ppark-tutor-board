@@ -47,7 +47,10 @@ const isPointInElement = (pt, el, radius) => {
            distancePointToSegment(pt, v4, v1) < hitRadius;
   } else if (el.type === 'image') {
       return pt.x >= el.x && pt.x <= el.x + el.w && pt.y >= el.y && pt.y <= el.y + el.h;
-    } else if (el.type === 'circle') {
+  } else if (el.type === 'text') {
+      const box = getElementBoundingBox(el);
+      return pt.x >= box.minX && pt.x <= box.maxX && pt.y >= box.minY && pt.y <= box.maxY;
+  } else if (el.type === 'circle') {
     const elRadius = Math.hypot(el.w, el.h);
     const dist = Math.hypot(pt.x - el.x, pt.y - el.y);
     return Math.abs(dist - elRadius) < hitRadius;
@@ -87,6 +90,8 @@ const getElementBoundingBox = (el) => {
      minX = el.x - r; minY = el.y - r; maxX = el.x + r; maxY = el.y + r;
   } else if (el.type === 'rectangle' || el.type === 'image') {
      minX = el.x; minY = el.y; maxX = el.x + el.w; maxY = el.y + el.h;
+  } else if (el.type === 'text') {
+     minX = el.x; minY = el.y; maxX = el.x + (el.w || el.size * el.text.length * 0.6); maxY = el.y + el.size;
   }
   return { minX, minY, maxX, maxY };
 };
@@ -137,6 +142,8 @@ const Board = () => {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [bgTemplate, setBgTemplate] = useState('blank');
+  const [textInput, setTextInput] = useState(null);
   
   // Collaborative state
   const [cursors, setCursors] = useState({});
@@ -283,8 +290,12 @@ const Board = () => {
 
   const drawElement = useCallback((ctx, el, currentZoom) => {
     ctx.beginPath();
+    const oldAlpha = ctx.globalAlpha;
+    const oldComposite = ctx.globalCompositeOperation;
+    
     ctx.strokeStyle = el.tool === 'eraser' ? 'rgba(0,0,0,1)' : el.color;
-    ctx.globalCompositeOperation = el.tool === 'eraser' ? 'destination-out' : 'source-over';
+    ctx.globalCompositeOperation = el.tool === 'eraser' ? 'destination-out' : (el.tool === 'highlighter' ? 'multiply' : 'source-over');
+    ctx.globalAlpha = el.tool === 'highlighter' ? 0.4 : 1.0;
     
     // Width can be dynamic based on pressure if available in points, but here we just use el.size
     ctx.lineWidth = el.size;
@@ -372,7 +383,15 @@ const Board = () => {
         const img = imageCacheRef.current[el.url];
         ctx.drawImage(img, el.x, el.y, el.w, el.h);
       }
+    } else if (el.type === 'text') {
+      ctx.font = `${el.size}px sans-serif`;
+      ctx.fillStyle = el.color;
+      ctx.textBaseline = 'top';
+      ctx.fillText(el.text, el.x, el.y);
     }
+    
+    ctx.globalAlpha = oldAlpha;
+    ctx.globalCompositeOperation = oldComposite;
   }, []);
 
   const redrawBase = useCallback(() => {
@@ -386,11 +405,51 @@ const Board = () => {
     
     ctx.translate(pan.x, pan.y);
     ctx.scale(zoom, zoom);
+    
+    if (bgTemplate !== 'blank') {
+       ctx.strokeStyle = '#e5e7eb';
+       ctx.lineWidth = 1 / zoom;
+       const startX = -pan.x / zoom;
+       const startY = -pan.y / zoom;
+       const endX = (canvas.width - pan.x) / zoom;
+       const endY = (canvas.height - pan.y) / zoom;
+       
+       ctx.beginPath();
+       if (bgTemplate === 'lined' || bgTemplate === 'grid') {
+           const spacing = 40;
+           const firstLineY = Math.floor(startY / spacing) * spacing;
+           for (let y = firstLineY; y < endY; y += spacing) {
+               ctx.moveTo(startX, y);
+               ctx.lineTo(endX, y);
+           }
+           if (bgTemplate === 'grid') {
+               const firstLineX = Math.floor(startX / spacing) * spacing;
+               for (let x = firstLineX; x < endX; x += spacing) {
+                   ctx.moveTo(x, startY);
+                   ctx.lineTo(x, endY);
+               }
+           }
+           ctx.stroke();
+       } else if (bgTemplate === 'dot') {
+           const spacing = 40;
+           ctx.fillStyle = '#d1d5db';
+           const firstLineY = Math.floor(startY / spacing) * spacing;
+           const firstLineX = Math.floor(startX / spacing) * spacing;
+           for (let y = firstLineY; y < endY; y += spacing) {
+               for (let x = firstLineX; x < endX; x += spacing) {
+                   ctx.beginPath();
+                   ctx.arc(x, y, 2 / zoom, 0, Math.PI * 2);
+                   ctx.fill();
+               }
+           }
+       }
+    }
+    
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
     elementsRef.current.forEach(el => drawElement(ctx, el, zoom));
-  }, [zoom, pan, drawElement]);
+  }, [zoom, pan, bgTemplate, drawElement]);
 
   const redrawDraft = useCallback(() => {
     const canvas = draftCanvasRef.current;
@@ -497,6 +556,12 @@ const Board = () => {
   const onPointerDown = (e) => {
     setContextMenuPos(null);
     setShowColorPicker(false);
+    
+    if (currentTool === 'text') {
+        const pos = getMousePos(e);
+        setTextInput({ x: pos.x, y: pos.y, text: '' });
+        return;
+    }
     
     if (activePointerId.current !== null) return; // Ignore multitouch secondary fingers
     activePointerId.current = e.pointerId;
@@ -1150,6 +1215,7 @@ const Board = () => {
         handleClear={handleClear} handleUndo={handleUndo} handleRedo={handleRedo}
         canUndo={pastStates.length > 0} canRedo={futureStates.length > 0}
         handleUpload={handleUpload}
+        bgTemplate={bgTemplate} setBgTemplate={setBgTemplate}
       />
 
       <div 
@@ -1245,6 +1311,55 @@ const Board = () => {
                )}
             </div>
           </div>
+        )}
+
+        {textInput && (
+            <input 
+                autoFocus
+                type="text"
+                value={textInput.text}
+                onChange={(e) => setTextInput({ ...textInput, text: e.target.value })}
+                onBlur={() => {
+                    if (textInput.text.trim()) {
+                        const dummyCanvas = document.createElement('canvas');
+                        const ctx = dummyCanvas.getContext('2d');
+                        ctx.font = `${brushSize * 3}px sans-serif`;
+                        const metrics = ctx.measureText(textInput.text);
+                        
+                        const newEl = {
+                            id: generateId(),
+                            type: 'text',
+                            tool: 'text',
+                            x: textInput.x,
+                            y: textInput.y,
+                            text: textInput.text,
+                            color: brushColor,
+                            size: brushSize * 3,
+                            w: metrics.width
+                        };
+                        elementsRef.current = [...elementsRef.current, newEl];
+                        setElements(elementsRef.current);
+                        if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+                        if (fullRedrawRef.current) fullRedrawRef.current();
+                    }
+                    setTextInput(null);
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.target.blur();
+                }}
+                style={{
+                    position: 'absolute',
+                    left: `${textInput.x * zoom + pan.x}px`,
+                    top: `${textInput.y * zoom + pan.y}px`,
+                    color: brushColor,
+                    fontSize: `${brushSize * 3 * zoom}px`,
+                    background: 'transparent',
+                    border: '1px dashed #ccc',
+                    outline: 'none',
+                    minWidth: '100px',
+                    pointerEvents: 'auto'
+                }}
+            />
         )}
       </div>
     </div>

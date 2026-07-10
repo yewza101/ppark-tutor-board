@@ -1112,9 +1112,95 @@ const Board = () => {
     }
   };
 
+  const pasteElements = (els, pos) => {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      els.forEach(el => {
+         const bbox = getElementBoundingBox(el);
+         if (bbox.minX !== undefined) {
+             minX = Math.min(minX, bbox.minX);
+             minY = Math.min(minY, bbox.minY);
+             maxX = Math.max(maxX, bbox.maxX);
+             maxY = Math.max(maxY, bbox.maxY);
+         }
+      });
+      
+      if (minX === Infinity) return;
+      
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      
+      const targetX = (pos.x - pan.x) / zoom;
+      const targetY = (pos.y - pan.y) / zoom;
+      
+      const dx = targetX - centerX;
+      const dy = targetY - centerY;
+      
+      const newIds = [];
+      const clonedElements = [];
+      
+      els.forEach(el => {
+          const clone = JSON.parse(JSON.stringify(el));
+          clone.id = generateId();
+          
+          if (clone.type === 'path') {
+              clone.points = clone.points.map(p => p ? { x: p.x + dx, y: p.y + dy } : null);
+              clone.path2d = null;
+          } else {
+              clone.x += dx;
+              clone.y += dy;
+              if (clone.type === 'line') {
+                  clone.x1 += dx;
+                  clone.y1 += dy;
+              }
+          }
+          
+          clonedElements.push(clone);
+          newIds.push(clone.id);
+          if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: clone, socketId: socket.id });
+      });
+      
+      if (clonedElements.length > 0) {
+          setElements(prev => {
+              const newEls = [...prev, ...clonedElements];
+              elementsRef.current = newEls;
+              return newEls;
+          });
+          
+          setSelectedElementIds(newIds);
+          setCurrentTool('select');
+          activeLassoPathRef.current = null;
+          if (fullRedrawRef.current) fullRedrawRef.current();
+      }
+  };
+
   const handlePasteFromClipboard = async (pos) => {
     try {
       setGlobalMenuPos(null);
+      
+      try {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+              try {
+                  const parsed = JSON.parse(text);
+                  if (parsed && parsed.type === 'ppark_clipboard' && Array.isArray(parsed.elements)) {
+                      pasteElements(parsed.elements, pos);
+                      return;
+                  }
+              } catch (e) {}
+          }
+      } catch (e) {}
+
+      const localStr = localStorage.getItem('ppark_clipboard');
+      if (localStr) {
+         try {
+            const parsed = JSON.parse(localStr);
+            if (parsed && parsed.type === 'ppark_clipboard' && Array.isArray(parsed.elements)) {
+                pasteElements(parsed.elements, pos);
+                return;
+            }
+         } catch(e) {}
+      }
+
       const items = await navigator.clipboard.read();
       for (const item of items) {
         if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
@@ -1177,6 +1263,17 @@ const Board = () => {
       }
     } catch (err) {
       console.error('Failed to paste:', err);
+      const localStr = localStorage.getItem('ppark_clipboard');
+      if (localStr) {
+         try {
+            const parsed = JSON.parse(localStr);
+            if (parsed && parsed.type === 'ppark_clipboard' && Array.isArray(parsed.elements)) {
+                pasteElements(parsed.elements, pos);
+                return;
+            }
+         } catch(e) {}
+      }
+
       try {
         const text = await navigator.clipboard.readText();
         if (text) {
@@ -1274,6 +1371,21 @@ const Board = () => {
       setSelectedElementIds([]);
       activeLassoPathRef.current = null;
       if (fullRedrawRef.current) fullRedrawRef.current();
+  };
+
+  const handleCopySelection = async () => {
+      const selectedEls = elementsRef.current.filter(el => selectedElementIds.includes(el.id));
+      if (selectedEls.length > 0) {
+          const clipboardData = { type: 'ppark_clipboard', elements: selectedEls };
+          const jsonStr = JSON.stringify(clipboardData);
+          try {
+              await navigator.clipboard.writeText(jsonStr);
+          } catch (err) {
+              console.warn('Failed to write to OS clipboard', err);
+          }
+          localStorage.setItem('ppark_clipboard', jsonStr);
+          setContextMenuPos(null);
+      }
   };
 
   const handleDuplicateSelection = () => {
@@ -1431,8 +1543,11 @@ const Board = () => {
                   </div>
                </button>
                <div className="w-px h-5 bg-gray-200 mx-1"></div>
-               <button onClick={handleDuplicateSelection} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-700 transition-colors" title="Duplicate">
+               <button onClick={handleCopySelection} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-700 transition-colors" title="Copy">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+               </button>
+               <button onClick={handleDuplicateSelection} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-700 transition-colors" title="Duplicate">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
                </button>
                <button onClick={handleDeleteSelection} className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors" title="Delete">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>

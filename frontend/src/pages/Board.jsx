@@ -739,6 +739,7 @@ const Board = () => {
             origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id)))),
             origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
           };
+          startPoint.current = { x: e.clientX, y: e.clientY };
           isDrawing.current = true;
           e.target.setPointerCapture(e.pointerId);
           return;
@@ -753,6 +754,7 @@ const Board = () => {
             origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id)))),
             origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
           };
+          startPoint.current = { x: e.clientX, y: e.clientY };
           isDrawing.current = true;
           e.target.setPointerCapture(e.pointerId);
           return;

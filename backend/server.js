@@ -3,6 +3,7 @@ const http = require('http');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const dotenv = require('dotenv');
+const multer = require('multer');
 
 dotenv.config();
 
@@ -31,6 +32,26 @@ app.use(express.json({ limit: '50mb' }));
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/boards', boardRouter);
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+  const ext = req.file.originalname.split('.').pop();
+  const filename = `${Date.now()}_${Math.random().toString(36).substring(2)}.${ext}`;
+  
+  const { data, error } = await supabase.storage
+    .from('board-assets')
+    .upload(filename, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: false
+    });
+    
+  if (error) return res.status(500).json({ message: error.message });
+  
+  const { data: publicUrlData } = supabase.storage.from('board-assets').getPublicUrl(filename);
+  res.json({ url: publicUrlData.publicUrl });
+});
 
 // Socket.io for Real-time Drawing
 io.on('connection', (socket) => {
@@ -93,6 +114,18 @@ io.on('connection', (socket) => {
     const elements = await getBoardState(data.boardId);
     boardStates[data.boardId] = elements.filter(el => el.id !== data.elementId);
     saveBoardState(data.boardId);
+  });
+
+  socket.on('update-element', async (data) => {
+    // data = { boardId, element }
+    socket.to(`board_${data.boardId}`).emit('update-element', data);
+    const elements = await getBoardState(data.boardId);
+    const index = elements.findIndex(el => el.id === data.element.id);
+    if (index !== -1) {
+      elements[index] = data.element;
+      boardStates[data.boardId] = elements;
+      saveBoardState(data.boardId);
+    }
   });
 
   socket.on('canvas-update', async (data) => {

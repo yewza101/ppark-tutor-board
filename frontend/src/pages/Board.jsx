@@ -6,6 +6,8 @@ import { ArrowLeft } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import Toolbar from '../components/Toolbar';
 import { API_URL } from '../config';
+import * as pdfjsLib from 'pdfjs-dist';
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const distancePointToSegment = (p, v, w) => {
   const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
@@ -76,6 +78,9 @@ const Board = () => {
   
   // Collaborative state
   const [cursors, setCursors] = useState({});
+  const imageCacheRef = useRef({});
+  const [selectedElementId, setSelectedElementId] = useState(null);
+  const dragContext = useRef(null);
   
   // Drawing state
   const isDrawing = useRef(false);
@@ -176,6 +181,12 @@ const Board = () => {
       });
     });
 
+    newSocket.on('update-element', (data) => {
+      elementsRef.current = elementsRef.current.map(el => el.id === data.element.id ? data.element : el);
+      setElements([...elementsRef.current]);
+      if (redrawRef.current) redrawRef.current();
+    });
+
     newSocket.on('delete-element', ({ elementId }) => {
       elementsRef.current = elementsRef.current.filter(el => el.id !== elementId);
       setElements([...elementsRef.current]);
@@ -268,7 +279,7 @@ const Board = () => {
     
     // Draw remote paths
     Object.values(remotePaths.current).forEach(drawElement);
-  }, [zoom, pan]); // Removed elements from deps since we use elementsRef
+  }, [zoom, pan, selectedElementId]); // Removed elements from deps since we use elementsRef
 
   useEffect(() => {
     elementsRef.current = elements;
@@ -317,6 +328,57 @@ const Board = () => {
     }
 
     if (e.button !== 0 && e.pointerType === 'mouse') return; // Only left click for drawing
+
+    if (currentTool === 'select') {
+      const pos = getMousePos(e);
+      const hitIdx = elementsRef.current.findLastIndex(el => isPointInElement(pos, el, brushSize));
+      if (hitIdx !== -1) {
+        const el = elementsRef.current[hitIdx];
+        setSelectedElementId(el.id);
+        let type = 'move';
+        if (el.type === 'image') {
+          const hs = 15 / zoom;
+          if (pos.x >= el.x + el.w - hs && pos.y >= el.y + el.h - hs) type = 'scale';
+        }
+        dragContext.current = { elementId: el.id, type, startX: pos.x, startY: pos.y, origX: el.x, origY: el.y, origW: el.w, origH: el.h, origX1: el.x1, origY1: el.y1, origPoints: el.points ? el.points.map(p => ({...p})) : null };
+        isDrawing.current = true;
+        e.target.setPointerCapture(e.pointerId);
+      } else {
+        setSelectedElementId(null);
+      }
+      return;
+    }
+
+    if (currentTool === 'select' && dragContext.current) {
+      const dx = pos.x - dragContext.current.startX;
+      const dy = pos.y - dragContext.current.startY;
+      const elIdx = elementsRef.current.findIndex(el => el.id === dragContext.current.elementId);
+      if (elIdx !== -1) {
+        const el = elementsRef.current[elIdx];
+        if (dragContext.current.type === 'move') {
+          if (el.type === 'path') {
+             el.points = el.points.map((p, i) => ({ x: dragContext.current.origPoints[i].x + dx, y: dragContext.current.origPoints[i].y + dy }));
+          } else {
+             el.x = dragContext.current.origX + dx;
+             el.y = dragContext.current.origY + dy;
+             if (el.type === 'line') {
+               el.x1 = dragContext.current.origX1 + dx;
+               el.y1 = dragContext.current.origY1 + dy;
+             }
+          }
+        } else if (dragContext.current.type === 'scale' && el.type === 'image') {
+          el.w = Math.max(20, dragContext.current.origW + dx);
+          el.h = Math.max(20, dragContext.current.origH + dy);
+        }
+        setElements([...elementsRef.current]);
+        requestAnimationFrame(redraw);
+        if (socket && socket.id && shouldEmit) {
+          socket.emit('update-element', { boardId: studentId, element: el });
+          lastEmitTime.current = now;
+        }
+      }
+      return;
+    }
 
     if (currentTool === 'eraser-object') {
       const pos = getMousePos(e);
@@ -445,6 +507,15 @@ const Board = () => {
       return;
     }
 
+    if (dragContext.current) {
+      if (socket && socket.id) {
+        const el = elementsRef.current.find(el => el.id === dragContext.current.elementId);
+        if (el) socket.emit('update-element', { boardId: studentId, element: el });
+      }
+      dragContext.current = null;
+      isDrawing.current = false;
+    }
+
     if (isDrawing.current && currentPath.current) {
       const stroke = currentPath.current;
       
@@ -508,6 +579,55 @@ const Board = () => {
   };
 
   // Toolbar Actions
+  const handleUpload = async (file) => {
+    try {
+      let uploadFile = file;
+      if (file.type === 'application/pdf') {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        uploadFile = new File([blob], file.name.replace('.pdf', '.png'), { type: 'image/png' });
+      }
+
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      const res = await axios.post(`${API_URL}/api/upload`, formData);
+      const publicUrl = res.data.url;
+
+      const newEl = {
+        id: generateId(),
+        type: 'image',
+        url: publicUrl,
+        x: -pan.x / zoom + 50,
+        y: -pan.y / zoom + 50,
+        w: 400,
+        h: uploadFile.type === 'image/png' && file.type === 'application/pdf' ? 565 : 400
+      };
+
+      const img = new Image();
+      img.onload = () => {
+        newEl.w = Math.min(img.width, 800);
+        newEl.h = (img.height / img.width) * newEl.w;
+        elementsRef.current = [...elementsRef.current, newEl];
+        setElements([...elementsRef.current]);
+        redraw();
+        if (socket && socket.id) {
+          socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+        }
+      };
+      img.src = publicUrl;
+    } catch (err) {
+      console.error('Upload failed', err);
+      alert('Upload failed: ' + err.message);
+    }
+  };
+
   const handleUndo = () => {
     if (pastStates.length === 0) return;
     const previous = pastStates[pastStates.length - 1];
@@ -561,6 +681,7 @@ const Board = () => {
         handleZoomIn={handleZoomIn} handleZoomOut={handleZoomOut} handleResetZoom={handleResetZoom}
         handleClear={handleClear} handleUndo={handleUndo} handleRedo={handleRedo}
         canUndo={pastStates.length > 0} canRedo={futureStates.length > 0}
+        handleUpload={handleUpload}
       />
 
       <div 

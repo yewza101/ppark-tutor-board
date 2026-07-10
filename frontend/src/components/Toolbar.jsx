@@ -1,7 +1,8 @@
 import { 
   Pencil, Eraser, Circle, Square, Minus, 
-  ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors
+  ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon
 } from 'lucide-react';
+import { useRef } from 'react';
 
 const Toolbar = ({ 
   currentTool, setCurrentTool, 
@@ -9,10 +10,12 @@ const Toolbar = ({
   brushSize, setBrushSize,
   handleZoomIn, handleZoomOut, handleResetZoom,
   handleClear, handleUndo, handleRedo,
-  canUndo, canRedo
+  canUndo, canRedo, handleUpload
 }) => {
+  const fileInputRef = useRef(null);
   
   const tools = [
+    { id: 'select', icon: MousePointer2, label: 'Select' },
     { id: 'pan', icon: Hand, label: 'Pan (Move)' },
     { id: 'pencil', icon: Pencil, label: 'Pencil' },
     { id: 'eraser', icon: Eraser, label: 'Eraser (Normal)' },
@@ -117,7 +120,27 @@ const Toolbar = ({
         <button onClick={handleResetZoom} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Reset Zoom/Pan">
           <Maximize size={20} />
         </button>
-        <div className="w-px h-6 bg-gray-200 mx-1"></div>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload Image / PDF"
+            className="p-2 text-gray-700 bg-white rounded-lg border border-gray-200 shadow-sm hover:bg-gray-50 active:bg-gray-100 transition-colors"
+          >
+            <ImageIcon size={20} />
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                handleUpload(e.target.files[0]);
+                e.target.value = ''; // Reset
+              }
+            }} 
+            accept="image/*,application/pdf"
+            className="hidden" 
+          />
+
+          <div className="w-px h-6 bg-gray-300 mx-1"></div>
         <button onClick={handleClear} className="p-2 text-red-600 hover:bg-red-50 rounded-xl" title="Clear Canvas">
           <Trash2 size={20} />
         </button>

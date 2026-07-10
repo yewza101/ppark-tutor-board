@@ -13,6 +13,7 @@
     "axios": "^1.18.1",
     "fabric": "^7.4.0",
     "lucide-react": "^1.23.0",
+    "pdfjs-dist": "^3.11.174",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",

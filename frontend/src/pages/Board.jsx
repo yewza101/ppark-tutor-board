@@ -557,12 +557,6 @@ const Board = () => {
     setContextMenuPos(null);
     setShowColorPicker(false);
     
-    if (currentTool === 'text') {
-        const pos = getMousePos(e);
-        setTextInput({ x: pos.x, y: pos.y, text: '' });
-        return;
-    }
-    
     if (activePointerId.current !== null) return; // Ignore multitouch secondary fingers
     activePointerId.current = e.pointerId;
 
@@ -680,74 +674,48 @@ const Board = () => {
 
   const erasePixel = (pos) => {
     let changed = false;
-    const newElements = [];
     
     for (let j = 0; j < elementsRef.current.length; j++) {
       const el = elementsRef.current[j];
       
-      if (el.type === 'path') {
+      if (el.type === 'path' && el.tool !== 'eraser') {
         const box = getElementBoundingBox(el);
         if (box.minX !== undefined) {
             const pad = brushSize;
             if (pos.x < box.minX - pad || pos.x > box.maxX + pad || pos.y < box.minY - pad || pos.y > box.maxY + pad) {
-                newElements.push(el);
                 continue;
             }
         }
         
-        let pathCut = false;
-        const newPaths = [];
-        let currentSubPath = [];
-        
+        let pathMutated = false;
         const eraserRadius = brushSize / 2;
         
         for (let i = 0; i < el.points.length; i++) {
+           if (el.points[i] === null) continue;
+           
            let isPointErased = Math.hypot(el.points[i].x - pos.x, el.points[i].y - pos.y) < eraserRadius;
            let isSegmentErased = false;
            
-           if (!isPointErased && i > 0 && currentSubPath.length > 0) {
-               const prevPoint = el.points[i-1];
-               if (distancePointToSegment(pos, prevPoint, el.points[i]) < eraserRadius) {
+           if (!isPointErased && i > 0 && el.points[i-1] !== null) {
+               if (distancePointToSegment(pos, el.points[i-1], el.points[i]) < eraserRadius) {
                    isSegmentErased = true;
                }
            }
            
            if (isPointErased || isSegmentErased) {
-               pathCut = true;
-               if (currentSubPath.length > 0) {
-                   newPaths.push(currentSubPath);
-                   currentSubPath = [];
-               }
-               if (!isPointErased && isSegmentErased) {
-                   currentSubPath.push(el.points[i]);
-               }
-           } else {
-               currentSubPath.push(el.points[i]);
+               el.points[i] = null;
+               pathMutated = true;
            }
         }
-        if (currentSubPath.length > 0) {
-            newPaths.push(currentSubPath);
-        }
         
-        if (pathCut) {
+        if (pathMutated) {
             changed = true;
-            if (socket && socket.id) socket.emit('delete-element', { boardId: studentId, elementId: el.id });
-            
-            for (let subPath of newPaths) {
-                const newEl = { ...el, id: generateId(), points: subPath };
-                newElements.push(newEl);
-                if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
-            }
-        } else {
-            newElements.push(el);
+            if (socket && socket.id) socket.emit('update-element', { boardId: studentId, element: el });
         }
-      } else {
-        newElements.push(el);
       }
     }
     
     if (changed) {
-      elementsRef.current = newElements;
       setElements([...elementsRef.current]);
       if (fullRedrawRef.current) fullRedrawRef.current();
     }
@@ -928,6 +896,12 @@ const Board = () => {
     if (isPanning) {
       setIsPanning(false);
       return;
+    }
+
+    if (currentTool === 'text') {
+        const pos = getMousePos(e);
+        setTextInput({ x: pos.x, y: pos.y, text: '' });
+        return;
     }
 
     if (currentTool === 'select' && currentPath.current && currentPath.current.type === 'lasso') {
@@ -1315,7 +1289,7 @@ const Board = () => {
 
         {textInput && (
             <input 
-                autoFocus
+                ref={(input) => input && input.focus()}
                 type="text"
                 value={textInput.text}
                 onChange={(e) => setTextInput({ ...textInput, text: e.target.value })}
@@ -1356,8 +1330,11 @@ const Board = () => {
                     background: 'transparent',
                     border: '1px dashed #ccc',
                     outline: 'none',
-                    minWidth: '100px',
-                    pointerEvents: 'auto'
+                    minWidth: '150px',
+                    pointerEvents: 'auto',
+                    zIndex: 50,
+                    padding: '4px 8px',
+                    borderRadius: '4px'
                 }}
             />
         )}

@@ -77,7 +77,7 @@ const isPointInElement = (pt, el, radius) => {
            distancePointToSegment(pt, v2, v3) < hitRadius ||
            distancePointToSegment(pt, v3, v4) < hitRadius ||
            distancePointToSegment(pt, v4, v1) < hitRadius;
-  } else if (el.type === 'image') {
+  } else if (el.type === 'image' || el.type === 'math') {
       return pt.x >= el.x && pt.x <= el.x + el.w && pt.y >= el.y && pt.y <= el.y + el.h;
   } else if (el.type === 'text') {
       const box = getElementBoundingBox(el);
@@ -120,7 +120,7 @@ const getElementBoundingBox = (el) => {
   } else if (el.type === 'circle') {
      const r = Math.sqrt(Math.pow(el.w, 2) + Math.pow(el.h, 2));
      minX = el.x - r; minY = el.y - r; maxX = el.x + r; maxY = el.y + r;
-  } else if (el.type === 'rectangle' || el.type === 'image') {
+  } else if (el.type === 'rectangle' || el.type === 'image' || el.type === 'math') {
      minX = el.x; minY = el.y; maxX = el.x + el.w; maxY = el.y + el.h;
   } else if (el.type === 'text') {
      const canvas = document.createElement('canvas');
@@ -1070,8 +1070,29 @@ const Board = () => {
             activeLassoPathRef.current = null;
         }
       } else {
-        setSelectedElementIds([]);
-        activeLassoPathRef.current = null;
+        // Tap-to-select: if the lasso was just a tap/click, try to select the element under it
+        const tapPos = lassoPoints[0];
+        const hitIdx = elementsRef.current.findLastIndex(el => 
+          el.tool !== 'eraser' && isPointInElement(tapPos, el, 5)
+        );
+        if (hitIdx !== -1) {
+          const hitEl = elementsRef.current[hitIdx];
+          setSelectedElementIds([hitEl.id]);
+          // Create a synthetic lasso path around the element's bounding box
+          const box = getElementBoundingBox(hitEl);
+          if (box.minX !== undefined) {
+            const pad = 5;
+            activeLassoPathRef.current = [
+              {x: box.minX - pad, y: box.minY - pad},
+              {x: box.maxX + pad, y: box.minY - pad},
+              {x: box.maxX + pad, y: box.maxY + pad},
+              {x: box.minX - pad, y: box.maxY + pad}
+            ];
+          }
+        } else {
+          setSelectedElementIds([]);
+          activeLassoPathRef.current = null;
+        }
       }
       currentPath.current = null;
       isDrawing.current = false;

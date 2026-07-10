@@ -3,7 +3,7 @@ import {
   ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon,
   Highlighter, Type, Download, Sigma
 } from 'lucide-react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 const Toolbar = ({ 
   currentTool, setCurrentTool, 
@@ -15,6 +15,9 @@ const Toolbar = ({
   bgTemplate, setBgTemplate, handleExport
 }) => {
   const fileInputRef = useRef(null);
+  const [presetSizes, setPresetSizes] = useState([2, 5, 12]);
+  const [activeSizeIndex, setActiveSizeIndex] = useState(1);
+  const [showSizeSlider, setShowSizeSlider] = useState(false);
   
   const tools = [
     { id: 'select', icon: MousePointer2, label: 'Select' },
@@ -83,15 +86,53 @@ const Toolbar = ({
           />
         </div>
 
-        <input 
-          type="range" 
-          min="1" 
-          max="50" 
-          value={brushSize}
-          onChange={(e) => setBrushSize(parseInt(e.target.value))}
-          className="w-20 accent-blue-600"
-          title="Brush Size"
-        />
+        <div className="relative flex items-center gap-1 mx-1">
+          {[0, 1, 2].map((idx) => (
+            <button
+              key={idx}
+              onClick={() => {
+                if (activeSizeIndex === idx) {
+                  setShowSizeSlider(!showSizeSlider);
+                } else {
+                  setActiveSizeIndex(idx);
+                  setBrushSize(presetSizes[idx]);
+                  setShowSizeSlider(false);
+                }
+              }}
+              className={`w-8 h-8 flex justify-center items-center rounded-xl transition-colors ${activeSizeIndex === idx ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
+              title={activeSizeIndex === idx ? 'Adjust thickness' : 'Select thickness'}
+            >
+              <div 
+                className="rounded-full transition-all" 
+                style={{ 
+                  backgroundColor: activeSizeIndex === idx ? '#2563eb' : '#4b5563',
+                  width: Math.max(2, Math.min(20, presetSizes[idx] * 0.8)), 
+                  height: Math.max(2, Math.min(20, presetSizes[idx] * 0.8)) 
+                }} 
+              />
+            </button>
+          ))}
+          
+          {showSizeSlider && (
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-white shadow-xl border border-gray-200 rounded-xl p-3 z-50 flex flex-col items-center gap-2">
+              <span className="text-xs text-gray-500 whitespace-nowrap font-medium">Thickness: {presetSizes[activeSizeIndex]}px</span>
+              <input 
+                type="range" 
+                min="1" 
+                max="50" 
+                value={presetSizes[activeSizeIndex]}
+                onChange={(e) => {
+                  const newSize = parseInt(e.target.value);
+                  const newPresets = [...presetSizes];
+                  newPresets[activeSizeIndex] = newSize;
+                  setPresetSizes(newPresets);
+                  setBrushSize(newSize);
+                }}
+                className="w-32 accent-blue-600"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* History */}

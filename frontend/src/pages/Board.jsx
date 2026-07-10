@@ -133,7 +133,6 @@ const getElementBoundingBox = (el) => {
 };
 
 const isElementInLasso = (el, lassoPoints) => {
-  if (el.locked) return false; // Skip locked elements
   if (el.type === 'path' && el.points) {
     return el.points.some(p => p !== null && isPointInPolygon(p, lassoPoints));
   } else {
@@ -741,7 +740,37 @@ const Board = () => {
         }
       }
       
-      // Removed single-click hitIdx logic to allow pure lasso drawing
+      // Try click-to-select: check if there's an element under the click
+      const hitIdx = elementsRef.current.findLastIndex(el => 
+        el.tool !== 'eraser' && isPointInElement(pos, el, 5)
+      );
+      if (hitIdx !== -1) {
+        const hitEl = elementsRef.current[hitIdx];
+        setSelectedElementIds([hitEl.id]);
+        // Create a synthetic lasso path around the element's bounding box
+        const box = getElementBoundingBox(hitEl);
+        if (box.minX !== undefined) {
+          const synPad = 5;
+          activeLassoPathRef.current = [
+            {x: box.minX - synPad, y: box.minY - synPad},
+            {x: box.maxX + synPad, y: box.minY - synPad},
+            {x: box.maxX + synPad, y: box.maxY + synPad},
+            {x: box.minX - synPad, y: box.maxY + synPad}
+          ];
+        }
+        // Start move drag immediately (unless element is locked)
+        if (!hitEl.locked) {
+          dragContext.current = { 
+            type: 'move', startX: pos.x, startY: pos.y, 
+            isMoved: false,
+            origElements: [JSON.parse(JSON.stringify(hitEl))],
+            origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
+          };
+          isDrawing.current = true;
+          e.target.setPointerCapture(e.pointerId);
+        }
+        return;
+      }
       
       setSelectedElementIds([]);
       activeLassoPathRef.current = null;
@@ -1101,7 +1130,7 @@ const Board = () => {
         // Tap-to-select: if the lasso was just a tap/click, try to select the element under it
         const tapPos = lassoPoints[0];
         const hitIdx = elementsRef.current.findLastIndex(el => 
-          el.tool !== 'eraser' && !el.locked && isPointInElement(tapPos, el, 5)
+          el.tool !== 'eraser' && isPointInElement(tapPos, el, 5)
         );
         if (hitIdx !== -1) {
           const hitEl = elementsRef.current[hitIdx];

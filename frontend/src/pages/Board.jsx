@@ -148,7 +148,6 @@ const Board = () => {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [dragEndTick, setDragEndTick] = useState(0);
   const [contextMenuPos, setContextMenuPos] = useState(null);
-  const longPressTimerRef = useRef(null);
   
   // Drawing state
   const isDrawing = useRef(false);
@@ -534,6 +533,7 @@ const Board = () => {
         if (pos.x >= gMaxX + pad - hs && pos.x <= gMaxX + pad + hs && pos.y >= gMaxY + pad - hs && pos.y <= gMaxY + pad + hs) {
           dragContext.current = { 
             type: 'scale', startX: pos.x, startY: pos.y, 
+            isMoved: false,
             gMinX, gMinY, gMaxX, gMaxY,
             origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id)))),
             origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
@@ -546,21 +546,12 @@ const Board = () => {
         if (pos.x >= gMinX - pad && pos.x <= gMaxX + pad && pos.y >= gMinY - pad && pos.y <= gMaxY + pad) {
           dragContext.current = { 
             type: 'move', startX: pos.x, startY: pos.y, 
+            isMoved: false,
             origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id)))),
             origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
           };
           isDrawing.current = true;
           e.target.setPointerCapture(e.pointerId);
-          
-          if (e.pointerType !== 'mouse') {
-              longPressTimerRef.current = setTimeout(() => {
-                  const rect = canvasRef.current.getBoundingClientRect();
-                  setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-                  dragContext.current = null;
-                  isDrawing.current = false;
-                  e.target.releasePointerCapture(e.pointerId);
-              }, 500);
-          }
           return;
         }
       }
@@ -745,10 +736,11 @@ const Board = () => {
         return;
       }
       if (dragContext.current) {
-        if (longPressTimerRef.current) {
+        if (!dragContext.current.isMoved) {
             if (Math.hypot(e.clientX - startPoint.current.x, e.clientY - startPoint.current.y) > 5) {
-                clearTimeout(longPressTimerRef.current);
-                longPressTimerRef.current = null;
+                dragContext.current.isMoved = true;
+            } else {
+                return; // Ignore jitter
             }
         }
         
@@ -864,11 +856,6 @@ const Board = () => {
   };
 
   const onPointerUp = (e) => {
-    if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-    }
-    
     if (activePointerId.current !== e.pointerId) return;
     activePointerId.current = null;
     
@@ -904,12 +891,17 @@ const Board = () => {
     }
 
     if (dragContext.current) {
-      if (socket && socket.id) {
-        dragContext.current.origElements.forEach(origEl => {
-            if (!origEl) return;
-            const el = elementsRef.current.find(e => e.id === origEl.id);
-            if (el) socket.emit('update-element', { boardId: studentId, element: el });
-        });
+      if (!dragContext.current.isMoved) {
+          const rect = canvasRef.current.getBoundingClientRect();
+          setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      } else {
+          if (socket && socket.id) {
+            dragContext.current.origElements.forEach(origEl => {
+                if (!origEl) return;
+                const el = elementsRef.current.find(e => e.id === origEl.id);
+                if (el) socket.emit('update-element', { boardId: studentId, element: el });
+            });
+          }
       }
       dragContext.current = null;
       isDrawing.current = false;
@@ -1181,25 +1173,8 @@ const Board = () => {
           onContextMenu={(e) => {
              e.preventDefault();
              if (selectedElementIds.length > 0) {
-                 const pos = getMousePos(e);
-                 let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
-                 selectedElementIds.forEach(id => {
-                     const el = elementsRef.current.find(el => el.id === id);
-                     if (el && el.tool !== 'eraser') {
-                         const box = getElementBoundingBox(el);
-                         if (box.minX !== undefined) {
-                             if (box.minX < gMinX) gMinX = box.minX;
-                             if (box.minY < gMinY) gMinY = box.minY;
-                             if (box.maxX > gMaxX) gMaxX = box.maxX;
-                             if (box.maxY > gMaxY) gMaxY = box.maxY;
-                         }
-                     }
-                 });
-                 const pad = 5 / zoom;
-                 if (pos.x >= gMinX - pad && pos.x <= gMaxX + pad && pos.y >= gMinY - pad && pos.y <= gMaxY + pad) {
-                     const rect = canvasRef.current.getBoundingClientRect();
-                     setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-                 }
+                 const rect = canvasRef.current.getBoundingClientRect();
+                 setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
              }
           }}
         />

@@ -23,11 +23,15 @@ const isPointInElement = (pt, el, radius) => {
   
   if (el.type === 'path') {
     if (!el.points || el.points.length === 0) return false;
-    if (el.points.length === 1) {
-      return Math.hypot(pt.x - el.points[0].x, pt.y - el.points[0].y) < hitRadius;
-    }
     for (let i = 0; i < el.points.length - 1; i++) {
-      if (distancePointToSegment(pt, el.points[i], el.points[i+1]) < hitRadius) return true;
+      if (el.points[i] !== null && el.points[i+1] !== null) {
+        if (distancePointToSegment(pt, el.points[i], el.points[i+1]) < hitRadius) return true;
+      } else if (el.points[i] !== null && el.points[i+1] === null) {
+        if (Math.hypot(pt.x - el.points[i].x, pt.y - el.points[i].y) < hitRadius) return true;
+      }
+    }
+    if (el.points.length > 0 && el.points[el.points.length - 1] !== null) {
+      if (Math.hypot(pt.x - el.points[el.points.length - 1].x, pt.y - el.points[el.points.length - 1].y) < hitRadius) return true;
     }
     return false;
   } else if (el.type === 'line') {
@@ -67,11 +71,12 @@ const isPointInPolygon = (point, vs) => {
 const getElementBoundingBox = (el) => {
   let minX, minY, maxX, maxY;
   if (el.type === 'path') {
-     if (!el.points || el.points.length === 0) return {};
-     minX = Math.min(...el.points.map(p => p.x));
-     minY = Math.min(...el.points.map(p => p.y));
-     maxX = Math.max(...el.points.map(p => p.x));
-     maxY = Math.max(...el.points.map(p => p.y));
+     const validPoints = el.points ? el.points.filter(p => p !== null) : [];
+     if (validPoints.length === 0) return {};
+     minX = Math.min(...validPoints.map(p => p.x));
+     minY = Math.min(...validPoints.map(p => p.y));
+     maxX = Math.max(...validPoints.map(p => p.x));
+     maxY = Math.max(...validPoints.map(p => p.y));
   } else if (el.type === 'line') {
      minX = Math.min(el.x, el.x1);
      minY = Math.min(el.y, el.y1);
@@ -88,7 +93,7 @@ const getElementBoundingBox = (el) => {
 
 const isElementInLasso = (el, lassoPoints) => {
   if (el.type === 'path' && el.points) {
-    return el.points.some(p => isPointInPolygon(p, lassoPoints));
+    return el.points.some(p => p !== null && isPointInPolygon(p, lassoPoints));
   } else {
     const box = getElementBoundingBox(el);
     if (box.minX === undefined) return false;
@@ -321,9 +326,18 @@ const Board = () => {
       }
       if (el.type === 'path') {
         if (el.points.length > 0) {
-          ctx.moveTo(el.points[0].x, el.points[0].y);
-          for (let i = 1; i < el.points.length; i++) {
-            ctx.lineTo(el.points[i].x, el.points[i].y);
+          let isStarting = true;
+          for (let i = 0; i < el.points.length; i++) {
+            if (el.points[i] === null) {
+              isStarting = true;
+            } else {
+              if (isStarting) {
+                ctx.moveTo(el.points[i].x, el.points[i].y);
+                isStarting = false;
+              } else {
+                ctx.lineTo(el.points[i].x, el.points[i].y);
+              }
+            }
           }
           ctx.stroke();
         }
@@ -513,6 +527,13 @@ const Board = () => {
       e.target.setPointerCapture(e.pointerId);
       return;
     }
+    if (currentTool === 'eraser') {
+      const pos = getMousePos(e);
+      erasePixel(pos);
+      isDrawing.current = true;
+      e.target.setPointerCapture(e.pointerId);
+      return;
+    }
 
     isDrawing.current = true;
     const pos = getMousePos(e);
@@ -543,6 +564,37 @@ const Board = () => {
         color: brushColor,
         size: brushSize
       };
+    }
+  };
+
+  const erasePixel = (pos) => {
+    let changed = false;
+    elementsRef.current.forEach(el => {
+      if (el.type === 'path') {
+        let elChanged = false;
+        for (let i = 0; i < el.points.length; i++) {
+          if (el.points[i] !== null) {
+            if (Math.hypot(el.points[i].x - pos.x, el.points[i].y - pos.y) < brushSize) {
+              el.points[i] = null;
+              elChanged = true;
+            } else if (i > 0 && el.points[i-1] !== null) {
+              if (distancePointToSegment(pos, el.points[i-1], el.points[i]) < brushSize) {
+                el.points[i-1] = null;
+                el.points[i] = null;
+                elChanged = true;
+              }
+            }
+          }
+        }
+        if (elChanged) {
+           changed = true;
+           if (socket && socket.id) socket.emit('update-element', { boardId: studentId, element: el });
+        }
+      }
+    });
+    if (changed) {
+      setElements([...elementsRef.current]);
+      if (redrawRef.current) redrawRef.current();
     }
   };
 
@@ -605,7 +657,7 @@ const Board = () => {
           
           if (dragContext.current.type === 'move') {
             if (el.type === 'path') {
-               el.points = el.points.map((p, i) => ({ x: origEl.points[i].x + dx, y: origEl.points[i].y + dy }));
+               el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { x: origEl.points[i].x + dx, y: origEl.points[i].y + dy }));
             } else {
                el.x = origEl.x + dx;
                el.y = origEl.y + dy;
@@ -620,7 +672,7 @@ const Board = () => {
              const scale = origW === 0 ? 1 : newW / origW;
              
              if (el.type === 'path') {
-               el.points = el.points.map((p, i) => ({ 
+               el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { 
                  x: dragContext.current.gMinX + (origEl.points[i].x - dragContext.current.gMinX) * scale, 
                  y: dragContext.current.gMinY + (origEl.points[i].y - dragContext.current.gMinY) * scale 
                }));
@@ -652,6 +704,10 @@ const Board = () => {
 
     if (currentTool === 'eraser-object') {
       checkObjectEraserCollision(pos);
+      return;
+    }
+    if (currentTool === 'eraser') {
+      erasePixel(pos);
       return;
     }
 

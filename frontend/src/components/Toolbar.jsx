@@ -43,152 +43,176 @@ const Toolbar = ({
   const needsSize = ['pencil', 'highlighter', 'eraser', 'laser', 'line', 'circle', 'rectangle'].includes(currentTool);
 
   return (
-    <div 
-      className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none"
-      onPointerDown={(e) => e.stopPropagation()}
-      onPointerMove={(e) => e.stopPropagation()}
-      onPointerUp={(e) => e.stopPropagation()}
-    >
-      <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-nowrap items-center gap-2 border border-gray-100 overflow-x-auto overflow-y-hidden no-scrollbar w-full pointer-events-auto">
-      
-      {/* Tools */}
-      <div className={`flex flex-nowrap gap-1 pr-2 shrink-0 ${needsColor || needsSize ? 'border-r border-gray-200' : ''}`}>
-        {tools.map(tool => (
-          <button
-            key={tool.id}
-            onClick={() => setCurrentTool(tool.id)}
-            className={`p-2 rounded-xl transition-colors ${
-              currentTool === tool.id 
-                ? 'bg-blue-100 text-blue-600' 
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-            title={tool.label}
-          >
-            <tool.icon size={20} />
-          </button>
-        ))}
-      </div>
-
-      {/* Color Palette & Size */}
-      {(needsColor || needsSize) && (
-      <div className="flex flex-nowrap items-center gap-2 border-r border-gray-200 pr-2 pl-1 shrink-0">
-        {needsColor && (
-          <>
-            <div className="flex gap-1.5 justify-center items-center">
-          {presetColors.map(color => (
+    <>
+      {/* 1. Main Tools (Top Center) */}
+      <div 
+        className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+      >
+        <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-nowrap items-center gap-1 border border-gray-100 overflow-x-auto no-scrollbar w-full pointer-events-auto">
+          {tools.map(tool => (
             <button
-              key={color}
-              onClick={() => setBrushColor(color)}
-              className={`w-5 h-5 rounded-full border-2 transition-transform ${
-                brushColor === color ? 'scale-125 border-gray-400' : 'border-transparent hover:scale-110'
+              key={tool.id}
+              onClick={() => setCurrentTool(tool.id)}
+              className={`p-2 rounded-xl transition-colors shrink-0 ${
+                currentTool === tool.id 
+                  ? 'bg-blue-100 text-blue-600' 
+                  : 'text-gray-600 hover:bg-gray-100'
               }`}
-              style={{ backgroundColor: color }}
-              title={color}
-            />
-          ))}
-        </div>
-        
-        <div className="flex flex-col items-center gap-1 mx-1">
-          <input 
-            type="color" 
-            value={brushColor}
-            onChange={(e) => setBrushColor(e.target.value)}
-            className="w-7 h-7 rounded cursor-pointer border-0 p-0"
-            title="Custom Color"
-          />
-        </div>
-        </>
-        )}
-
-        {needsSize && (
-        <div className="relative flex items-center gap-1 mx-1">
-          {[0, 1, 2].map((idx) => (
-            <button
-              key={idx}
-              onClick={() => {
-                if (activeSizeIndex === idx) {
-                  setShowSizeSlider(!showSizeSlider);
-                } else {
-                  setActiveSizeIndex(idx);
-                  setBrushSize(presetSizes[idx]);
-                  setShowSizeSlider(false);
-                }
-              }}
-              className={`w-8 h-8 flex justify-center items-center rounded-xl transition-colors ${activeSizeIndex === idx ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
-              title={activeSizeIndex === idx ? 'Adjust thickness' : 'Select thickness'}
+              title={tool.label}
             >
-              <div 
-                className="rounded-full transition-all" 
-                style={{ 
-                  backgroundColor: activeSizeIndex === idx ? '#2563eb' : '#4b5563',
-                  width: Math.max(2, Math.min(20, presetSizes[idx] * 0.8)), 
-                  height: Math.max(2, Math.min(20, presetSizes[idx] * 0.8)) 
-                }} 
-              />
+              <tool.icon size={20} />
             </button>
           ))}
         </div>
-        )}
       </div>
-      )}
-      
-      {/* Moved size slider popup outside the overflow-hidden container */}
-      {showSizeSlider && needsSize && (
-        <div className="mt-2 bg-white shadow-xl border border-gray-200 rounded-xl p-3 z-50 flex flex-col items-center gap-2 pointer-events-auto">
-          <span className="text-xs text-gray-500 whitespace-nowrap font-medium">Thickness: {presetSizes[activeSizeIndex]}px</span>
-          <input 
-            type="range" 
-            min="1" 
-            max="50" 
-            value={presetSizes[activeSizeIndex]}
-            onChange={(e) => {
-              const newSize = parseInt(e.target.value);
-              const newPresets = [...presetSizes];
-              newPresets[activeSizeIndex] = newSize;
-              setPresetSizes(newPresets);
-              setBrushSize(newSize);
-            }}
-            className="w-32 accent-blue-600"
-          />
+
+      {/* 2. Properties: Colors & Sizes (Floating below Main Tools) */}
+      {(needsColor || needsSize) && (
+        <div 
+          className="absolute top-20 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+        >
+          <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-nowrap items-center gap-2 border border-gray-100 overflow-x-auto no-scrollbar pointer-events-auto">
+            {needsColor && (
+              <>
+                <div className="flex gap-1.5 justify-center items-center">
+                  {presetColors.map(color => (
+                    <button
+                      key={color}
+                      onClick={() => setBrushColor(color)}
+                      className={`w-5 h-5 rounded-full border-2 transition-transform shrink-0 ${
+                        brushColor === color ? 'scale-125 border-gray-400' : 'border-transparent hover:scale-110'
+                      }`}
+                      style={{ backgroundColor: color }}
+                      title={color}
+                    />
+                  ))}
+                </div>
+                
+                <div className="flex flex-col items-center gap-1 mx-1 shrink-0">
+                  <input 
+                    type="color" 
+                    value={brushColor}
+                    onChange={(e) => setBrushColor(e.target.value)}
+                    className="w-7 h-7 rounded cursor-pointer border-0 p-0"
+                    title="Custom Color"
+                  />
+                </div>
+              </>
+            )}
+
+            {needsColor && needsSize && <div className="w-px h-6 bg-gray-200 mx-1 shrink-0"></div>}
+
+            {needsSize && (
+              <div className="relative flex flex-nowrap items-center gap-1 shrink-0">
+                {[0, 1, 2].map((idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      if (activeSizeIndex === idx) {
+                        setShowSizeSlider(!showSizeSlider);
+                      } else {
+                        setActiveSizeIndex(idx);
+                        setBrushSize(presetSizes[idx]);
+                        setShowSizeSlider(false);
+                      }
+                    }}
+                    className={`w-8 h-8 flex justify-center items-center rounded-xl transition-colors shrink-0 ${activeSizeIndex === idx ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
+                    title={activeSizeIndex === idx ? 'Adjust thickness' : 'Select thickness'}
+                  >
+                    <div 
+                      className="rounded-full transition-all" 
+                      style={{ 
+                        backgroundColor: activeSizeIndex === idx ? '#2563eb' : '#4b5563',
+                        width: Math.max(2, Math.min(20, presetSizes[idx] * 0.8)), 
+                        height: Math.max(2, Math.min(20, presetSizes[idx] * 0.8)) 
+                      }} 
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          {/* Size Slider Popup */}
+          {showSizeSlider && needsSize && (
+            <div className="mt-2 bg-white shadow-xl border border-gray-200 rounded-xl p-3 z-50 flex flex-col items-center gap-2 pointer-events-auto">
+              <span className="text-xs text-gray-500 whitespace-nowrap font-medium">Thickness: {presetSizes[activeSizeIndex]}px</span>
+              <input 
+                type="range" 
+                min="1" 
+                max="50" 
+                value={presetSizes[activeSizeIndex]}
+                onChange={(e) => {
+                  const newSize = parseInt(e.target.value);
+                  const newPresets = [...presetSizes];
+                  newPresets[activeSizeIndex] = newSize;
+                  setPresetSizes(newPresets);
+                  setBrushSize(newSize);
+                }}
+                className="w-32 accent-blue-600"
+              />
+            </div>
+          )}
         </div>
       )}
+
+      {/* 3. Left Actions: History & Zoom (Bottom Left) */}
+      <div 
+        className="absolute bottom-4 left-4 z-10 pointer-events-none"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+      >
+        <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-col gap-1 border border-gray-100 pointer-events-auto">
+          <button onClick={handleZoomIn} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Zoom In">
+            <ZoomIn size={20} />
+          </button>
+          <button onClick={handleResetZoom} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Reset Zoom/Pan">
+            <Maximize size={20} />
+          </button>
+          <button onClick={handleZoomOut} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Zoom Out">
+            <ZoomOut size={20} />
+          </button>
+          
+          <div className="h-px w-6 bg-gray-200 mx-auto my-1"></div>
+          
+          <button 
+            onClick={handleUndo} 
+            disabled={!canUndo}
+            className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl disabled:opacity-30 transition-colors"
+            title="Undo"
+          >
+            <Undo size={20} />
+          </button>
+          <button 
+            onClick={handleRedo} 
+            disabled={!canRedo}
+            className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl disabled:opacity-30 transition-colors"
+            title="Redo"
+          >
+            <Redo size={20} />
+          </button>
+        </div>
       </div>
 
-      {/* History */}
-      <div className="flex flex-nowrap gap-1 border-r border-gray-200 pr-2 pl-1 shrink-0">
-        <button 
-          onClick={handleUndo} 
-          disabled={!canUndo}
-          className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl disabled:opacity-30 transition-colors"
-          title="Undo"
-        >
-          <Undo size={20} />
-        </button>
-        <button 
-          onClick={handleRedo} 
-          disabled={!canRedo}
-          className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl disabled:opacity-30 transition-colors"
-          title="Redo"
-        >
-          <Redo size={20} />
-        </button>
-      </div>
-
-      {/* Zoom & Clear */}
-      <div className="flex flex-nowrap gap-1 pl-1 shrink-0">
-        <button onClick={handleZoomIn} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Zoom In">
-          <ZoomIn size={20} />
-        </button>
-        <button onClick={handleZoomOut} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Zoom Out">
-          <ZoomOut size={20} />
-        </button>
-        <button onClick={handleResetZoom} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Reset Zoom/Pan">
-          <Maximize size={20} />
-        </button>
+      {/* 4. Right Actions: System Tools (Bottom Right) */}
+      <div 
+        className="absolute bottom-4 right-4 z-10 pointer-events-none"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+      >
+        <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-col gap-1 border border-gray-100 pointer-events-auto">
           <button
             onClick={() => fileInputRef.current?.click()}
             title="Upload Image / PDF"
-            className="p-2 text-gray-700 bg-white rounded-lg border border-gray-200 shadow-sm hover:bg-gray-50 active:bg-gray-100 transition-colors"
+            className="p-2 text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
           >
             <ImageIcon size={20} />
           </button>
@@ -202,36 +226,34 @@ const Toolbar = ({
                 e.target.value = ''; // Reset
               }
             }} 
-            accept="image/*,application/pdf"
             className="hidden" 
           />
 
-          <div className="w-px h-6 bg-gray-300 mx-1"></div>
+          <select 
+              value={bgTemplate} 
+              onChange={(e) => setBgTemplate(e.target.value)}
+              className="p-1 text-sm border-0 rounded-lg text-gray-700 bg-transparent hover:bg-gray-100 outline-none w-10 truncate appearance-none text-center cursor-pointer"
+              title="Paper Background"
+          >
+              <option value="blank">📄</option>
+              <option value="lined">📝</option>
+              <option value="grid">▦</option>
+              <option value="dot">⁖</option>
+          </select>
           
-        <select 
-            value={bgTemplate} 
-            onChange={(e) => setBgTemplate(e.target.value)}
-            className="p-1.5 text-sm border border-gray-200 rounded-lg text-gray-700 bg-white hover:bg-gray-50 outline-none"
-            title="Paper Background"
-        >
-            <option value="blank">Blank</option>
-            <option value="lined">Lined Paper</option>
-            <option value="grid">Grid Paper</option>
-            <option value="dot">Dot Grid</option>
-        </select>
-        
-        <div className="w-px h-6 bg-gray-300 mx-1"></div>
-        
-        <button onClick={handleExport} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl" title="Export to PDF">
-          <Download size={20} />
-        </button>
-        
-        <button onClick={handleClear} className="p-2 text-red-600 hover:bg-red-50 rounded-xl" title="Clear Canvas">
-          <Trash2 size={20} />
-        </button>
+          <div className="h-px w-6 bg-gray-200 mx-auto my-1"></div>
+          
+          <button onClick={handleExport} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl" title="Export to PDF">
+            <Download size={20} />
+          </button>
+          
+          <button onClick={handleClear} className="p-2 text-red-600 hover:bg-red-50 rounded-xl" title="Clear Canvas">
+            <Trash2 size={20} />
+          </button>
+        </div>
       </div>
 
-    </div>
+    </>
   );
 };
 

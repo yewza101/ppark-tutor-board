@@ -7,6 +7,47 @@ import useAuthStore from '../store/useAuthStore';
 import Toolbar from '../components/Toolbar';
 import { API_URL } from '../config';
 
+const distancePointToSegment = (p, v, w) => {
+  const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
+  if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+  let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+};
+
+const isPointInElement = (pt, el, radius) => {
+  const hitRadius = radius + (el.size ? el.size / 2 : 5);
+  
+  if (el.type === 'path') {
+    if (!el.points || el.points.length === 0) return false;
+    if (el.points.length === 1) {
+      return Math.hypot(pt.x - el.points[0].x, pt.y - el.points[0].y) < hitRadius;
+    }
+    for (let i = 0; i < el.points.length - 1; i++) {
+      if (distancePointToSegment(pt, el.points[i], el.points[i+1]) < hitRadius) return true;
+    }
+    return false;
+  } else if (el.type === 'line') {
+    return distancePointToSegment(pt, {x: el.x, y: el.y}, {x: el.x1, y: el.y1}) < hitRadius;
+  } else if (el.type === 'rectangle') {
+    const v1 = {x: el.x, y: el.y};
+    const v2 = {x: el.x + el.w, y: el.y};
+    const v3 = {x: el.x + el.w, y: el.y + el.h};
+    const v4 = {x: el.x, y: el.y + el.h};
+    return distancePointToSegment(pt, v1, v2) < hitRadius ||
+           distancePointToSegment(pt, v2, v3) < hitRadius ||
+           distancePointToSegment(pt, v3, v4) < hitRadius ||
+           distancePointToSegment(pt, v4, v1) < hitRadius;
+  } else if (el.type === 'circle') {
+    const elRadius = Math.hypot(el.w, el.h);
+    const dist = Math.hypot(pt.x - el.x, pt.y - el.y);
+    return Math.abs(dist - elRadius) < hitRadius;
+  }
+  return false;
+};
+
+const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
+
 const Board = () => {
   const { studentId } = useParams();
   const navigate = useNavigate();
@@ -100,7 +141,7 @@ const Board = () => {
       } else {
         remotePaths.current[data.socketId] = data.path;
       }
-      triggerRedraw();
+      if (redrawRef.current) redrawRef.current();
     });
 
     newSocket.on('draw-stroke', (data) => {
@@ -133,6 +174,12 @@ const Board = () => {
         setPastStates(p => [...p, prev]);
         return [];
       });
+    });
+
+    newSocket.on('delete-element', ({ elementId }) => {
+      elementsRef.current = elementsRef.current.filter(el => el.id !== elementId);
+      setElements([...elementsRef.current]);
+      if (redrawRef.current) redrawRef.current();
     });
 
     newSocket.on('cursor-move', (data) => {
@@ -271,6 +318,14 @@ const Board = () => {
 
     if (e.button !== 0 && e.pointerType === 'mouse') return; // Only left click for drawing
 
+    if (currentTool === 'eraser-object') {
+      const pos = getMousePos(e);
+      checkObjectEraserCollision(pos);
+      isDrawing.current = true;
+      e.target.setPointerCapture(e.pointerId);
+      return;
+    }
+
     isDrawing.current = true;
     const pos = getMousePos(e);
     startPoint.current = pos;
@@ -278,6 +333,7 @@ const Board = () => {
 
     if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser') {
       currentPath.current = {
+        id: generateId(),
         type: 'path',
         tool: currentTool,
         points: [pos],
@@ -287,6 +343,7 @@ const Board = () => {
     } else {
       // Shape
       currentPath.current = {
+        id: generateId(),
         type: currentTool,
         tool: currentTool,
         x: pos.x,
@@ -298,6 +355,21 @@ const Board = () => {
         color: brushColor,
         size: brushSize
       };
+    }
+  };
+
+  const checkObjectEraserCollision = (pos) => {
+    const elIdx = elementsRef.current.findLastIndex(el => isPointInElement(pos, el, brushSize));
+    if (elIdx !== -1) {
+      const deletedEl = elementsRef.current[elIdx];
+      if (deletedEl.id) {
+        elementsRef.current.splice(elIdx, 1);
+        setElements([...elementsRef.current]);
+        if (redrawRef.current) redrawRef.current();
+        if (socket && socket.id) {
+          socket.emit('delete-element', { boardId: studentId, elementId: deletedEl.id });
+        }
+      }
     }
   };
 
@@ -327,7 +399,14 @@ const Board = () => {
       return;
     }
 
-    if (!isDrawing.current || !currentPath.current) return;
+    if (!isDrawing.current) return;
+
+    if (currentTool === 'eraser-object') {
+      checkObjectEraserCollision(pos);
+      return;
+    }
+
+    if (!currentPath.current) return;
 
     if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser') {
       currentPath.current.points.push(pos);

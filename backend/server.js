@@ -87,6 +87,14 @@ io.on('connection', (socket) => {
     saveBoardState(boardId);
   });
 
+  socket.on('delete-element', async (data) => {
+    // data = { boardId, elementId }
+    socket.to(`board_${data.boardId}`).emit('delete-element', data);
+    const elements = await getBoardState(data.boardId);
+    boardStates[data.boardId] = elements.filter(el => el.id !== data.elementId);
+    saveBoardState(data.boardId);
+  });
+
   socket.on('canvas-update', async (data) => {
     // Fallback for full sync if needed
     socket.to(`board_${data.boardId}`).emit('canvas-update', data.canvasState);

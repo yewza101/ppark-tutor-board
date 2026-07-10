@@ -1,6 +1,6 @@
 import { 
   Pencil, Eraser, Circle, Square, Minus, 
-  ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2
+  ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors
 } from 'lucide-react';
 
 const Toolbar = ({ 
@@ -15,7 +15,8 @@ const Toolbar = ({
   const tools = [
     { id: 'pan', icon: Hand, label: 'Pan (Move)' },
     { id: 'pencil', icon: Pencil, label: 'Pencil' },
-    { id: 'eraser', icon: Eraser, label: 'Eraser' },
+    { id: 'eraser', icon: Eraser, label: 'Eraser (Normal)' },
+    { id: 'eraser-object', icon: Scissors, label: 'Object Eraser' },
     { id: 'laser', icon: Wand2, label: 'Laser Pointer' },
     { id: 'line', icon: Minus, label: 'Line' },
     { id: 'circle', icon: Circle, label: 'Circle' },

@@ -12,6 +12,21 @@ import { jsPDF } from 'jspdf';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import html2canvas from 'html2canvas';
+import { getStroke } from 'perfect-freehand';
+
+const getSvgPathFromStroke = (stroke) => {
+  if (!stroke.length) return '';
+  const d = stroke.reduce(
+    (acc, [x0, y0], i, arr) => {
+      const [x1, y1] = arr[(i + 1) % arr.length];
+      acc.push(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+      return acc;
+    },
+    ['M', ...stroke[0], 'Q']
+  );
+  d.push('Z');
+  return d.join(' ');
+};
 
 const renderMathToImage = async (latex, color, size) => {
     return new Promise((resolve) => {
@@ -353,6 +368,7 @@ const Board = () => {
       ctx.beginPath();
       
       ctx.strokeStyle = el.tool === 'eraser' ? 'rgba(0,0,0,1)' : el.color;
+      ctx.fillStyle = ctx.strokeStyle;
       ctx.globalCompositeOperation = el.tool === 'eraser' ? 'destination-out' : (el.tool === 'highlighter' ? 'multiply' : 'source-over');
       ctx.globalAlpha = el.tool === 'highlighter' ? 0.4 : 1.0;
       
@@ -390,38 +406,41 @@ const Board = () => {
           if (!p2dToDraw || !(p2dToDraw instanceof Path2D)) {
             const p2d = new Path2D();
             let pts = [];
-            const drawSmooth = (points) => {
+            
+            const drawFreehand = (points) => {
                 if (!points || points.length === 0) return;
-                if (points.length === 1) {
-                    p2d.moveTo(points[0].x, points[0].y);
-                    p2d.lineTo(points[0].x + 0.1, points[0].y + 0.1);
-                } else if (points.length === 2) {
-                    p2d.moveTo(points[0].x, points[0].y);
-                    p2d.lineTo(points[1].x, points[1].y);
-                } else {
-                    p2d.moveTo(points[0].x, points[0].y);
-                    for (let i = 1; i < points.length - 1; i++) {
-                        const xc = (points[i].x + points[i + 1].x) / 2;
-                        const yc = (points[i].y + points[i + 1].y) / 2;
-                        p2d.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
-                    }
-                    p2d.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+                
+                // Get stroke outline polygon
+                const strokePoints = getStroke(points, {
+                    size: el.size || 5,
+                    thinning: 0.5,
+                    smoothing: 0.5,
+                    streamline: 0.5,
+                    simulatePressure: true
+                });
+                
+                const pathData = getSvgPathFromStroke(strokePoints);
+                if (pathData) {
+                    const segmentP2d = new Path2D(pathData);
+                    p2d.addPath(segmentP2d);
                 }
             };
 
             for (let i = 0; i < el.points.length; i++) {
               if (el.points[i] === null || el.points[i] === undefined) {
-                if (pts.length > 0) drawSmooth(pts);
+                if (pts.length > 0) drawFreehand(pts);
                 pts = [];
               } else {
                 pts.push(el.points[i]);
               }
             }
-            if (pts.length > 0) drawSmooth(pts);
+            if (pts.length > 0) drawFreehand(pts);
+            
             try { el.path2d = p2d; } catch (e) {} // Ignore if object is frozen by React
             p2dToDraw = p2d;
           }
-          ctx.stroke(p2dToDraw);
+          
+          ctx.fill(p2dToDraw);
         }
       } else if (el.type === 'line') {
         ctx.moveTo(el.x1 || 0, el.y1 || 0);
@@ -549,7 +568,6 @@ const Board = () => {
     
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height); // Transparent!
-    
     ctx.translate(pan.x, pan.y);
     ctx.scale(zoom, zoom);
     ctx.lineCap = 'round';
@@ -648,7 +666,8 @@ const Board = () => {
     const rect = canvasRef.current.getBoundingClientRect();
     return {
       x: (e.clientX - rect.left - pan.x) / zoom,
-      y: (e.clientY - rect.top - pan.y) / zoom
+      y: (e.clientY - rect.top - pan.y) / zoom,
+      pressure: e.pressure !== undefined ? e.pressure : 0.5
     };
   };
 

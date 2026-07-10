@@ -135,6 +135,7 @@ const Toolbar = ({
           <input 
             type="file" 
             ref={fileInputRef} 
+            accept="image/*,application/pdf"
             onChange={(e) => {
               if (e.target.files && e.target.files[0]) {
                 handleUpload(e.target.files[0]);

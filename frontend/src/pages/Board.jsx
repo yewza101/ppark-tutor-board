@@ -328,35 +328,39 @@ const Board = () => {
     
     if (el.type === 'path') {
       if (el.points.length > 0) {
-        let pts = [];
-        const drawSmooth = (points) => {
-            if (points.length === 1) {
-                ctx.moveTo(points[0].x, points[0].y);
-                ctx.lineTo(points[0].x + 0.1, points[0].y + 0.1);
-            } else if (points.length === 2) {
-                ctx.moveTo(points[0].x, points[0].y);
-                ctx.lineTo(points[1].x, points[1].y);
-            } else {
-                ctx.moveTo(points[0].x, points[0].y);
-                for (let i = 1; i < points.length - 1; i++) {
-                    const xc = (points[i].x + points[i + 1].x) / 2;
-                    const yc = (points[i].y + points[i + 1].y) / 2;
-                    ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
-                }
-                ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
-            }
-        };
+        if (!el.path2d) {
+          const p2d = new Path2D();
+          let pts = [];
+          const drawSmooth = (points) => {
+              if (points.length === 1) {
+                  p2d.moveTo(points[0].x, points[0].y);
+                  p2d.lineTo(points[0].x + 0.1, points[0].y + 0.1);
+              } else if (points.length === 2) {
+                  p2d.moveTo(points[0].x, points[0].y);
+                  p2d.lineTo(points[1].x, points[1].y);
+              } else {
+                  p2d.moveTo(points[0].x, points[0].y);
+                  for (let i = 1; i < points.length - 1; i++) {
+                      const xc = (points[i].x + points[i + 1].x) / 2;
+                      const yc = (points[i].y + points[i + 1].y) / 2;
+                      p2d.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+                  }
+                  p2d.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+              }
+          };
 
-        for (let i = 0; i < el.points.length; i++) {
-          if (el.points[i] === null) {
-            if (pts.length > 0) drawSmooth(pts);
-            pts = [];
-          } else {
-            pts.push(el.points[i]);
+          for (let i = 0; i < el.points.length; i++) {
+            if (el.points[i] === null) {
+              if (pts.length > 0) drawSmooth(pts);
+              pts = [];
+            } else {
+              pts.push(el.points[i]);
+            }
           }
+          if (pts.length > 0) drawSmooth(pts);
+          el.path2d = p2d;
         }
-        if (pts.length > 0) drawSmooth(pts);
-        ctx.stroke();
+        ctx.stroke(el.path2d);
       }
     } else if (el.type === 'line') {
       ctx.moveTo(el.x1, el.y1);
@@ -704,6 +708,7 @@ const Board = () => {
            
            if (isPointErased || isSegmentErased) {
                el.points[i] = null;
+               el.path2d = null; // Invalidate cached path
                pathMutated = true;
            }
         }
@@ -789,6 +794,7 @@ const Board = () => {
           if (dragContext.current.type === 'move') {
             if (el.type === 'path') {
                el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { x: origEl.points[i].x + dx, y: origEl.points[i].y + dy }));
+               el.path2d = null;
             } else {
                el.x = origEl.x + dx;
                el.y = origEl.y + dy;
@@ -808,6 +814,7 @@ const Board = () => {
                  y: dragContext.current.gMinY + (origEl.points[i].y - dragContext.current.gMinY) * scale 
                }));
                el.size = origEl.size * scale;
+               el.path2d = null;
              } else {
                el.x = dragContext.current.gMinX + (origEl.x - dragContext.current.gMinX) * scale;
                el.y = dragContext.current.gMinY + (origEl.y - dragContext.current.gMinY) * scale;

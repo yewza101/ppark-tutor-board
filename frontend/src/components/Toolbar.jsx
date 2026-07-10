@@ -44,10 +44,10 @@ const Toolbar = ({
 
   return (
     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none">
-      <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex items-center gap-2 border border-gray-100 overflow-x-auto overflow-y-hidden no-scrollbar w-full pointer-events-auto">
+      <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-nowrap items-center gap-2 border border-gray-100 overflow-x-auto overflow-y-hidden no-scrollbar w-full pointer-events-auto">
       
       {/* Tools */}
-      <div className={`flex gap-1 pr-2 shrink-0 ${needsColor || needsSize ? 'border-r border-gray-200' : ''}`}>
+      <div className={`flex flex-nowrap gap-1 pr-2 shrink-0 ${needsColor || needsSize ? 'border-r border-gray-200' : ''}`}>
         {tools.map(tool => (
           <button
             key={tool.id}
@@ -66,7 +66,7 @@ const Toolbar = ({
 
       {/* Color Palette & Size */}
       {(needsColor || needsSize) && (
-      <div className="flex items-center gap-2 border-r border-gray-200 pr-2 pl-1 shrink-0">
+      <div className="flex flex-nowrap items-center gap-2 border-r border-gray-200 pr-2 pl-1 shrink-0">
         {needsColor && (
           <>
             <div className="flex gap-1.5 justify-center items-center">
@@ -150,7 +150,7 @@ const Toolbar = ({
       </div>
 
       {/* History */}
-      <div className="flex gap-1 border-r border-gray-200 pr-2 pl-1 shrink-0">
+      <div className="flex flex-nowrap gap-1 border-r border-gray-200 pr-2 pl-1 shrink-0">
         <button 
           onClick={handleUndo} 
           disabled={!canUndo}
@@ -170,7 +170,7 @@ const Toolbar = ({
       </div>
 
       {/* Zoom & Clear */}
-      <div className="flex gap-1 pl-1 shrink-0">
+      <div className="flex flex-nowrap gap-1 pl-1 shrink-0">
         <button onClick={handleZoomIn} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Zoom In">
           <ZoomIn size={20} />
         </button>

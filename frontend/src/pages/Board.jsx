@@ -198,6 +198,12 @@ const Board = () => {
   const currentPath = useRef(null);
   const startPoint = useRef(null);
   const activePointerId = useRef(null);
+  
+  // For Pinch to Zoom
+  const activePointers = useRef(new Map());
+  const lastPinchDist = useRef(null);
+  const lastPinchCenter = useRef(null);
+  
   const remotePaths = useRef({});
   const lastEmitTime = useRef(0);
 
@@ -626,6 +632,22 @@ const Board = () => {
     if (globalMenuPos) setGlobalMenuPos(null);
     setShowColorPicker(false);
     
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointers.current.size === 2) {
+        setIsPanning(false);
+        setIsDrawing(false); // Cancel any ongoing draw
+        
+        const pts = Array.from(activePointers.current.values());
+        lastPinchDist.current = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        lastPinchCenter.current = {
+            x: (pts[0].x + pts[1].x) / 2,
+            y: (pts[0].y + pts[1].y) / 2
+        };
+        return;
+    }
+    
+    if (activePointers.current.size > 2) return;
+    
     if (currentTool === 'text' || currentTool === 'math') {
         if (textInput) return; // Prevent overwriting active text input before onBlur fires
         const pos = getMousePos(e);
@@ -820,6 +842,44 @@ const Board = () => {
   };
 
   const onPointerMove = (e) => {
+    if (activePointers.current.has(e.pointerId)) {
+        activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+    
+    if (activePointers.current.size === 2) {
+        const pts = Array.from(activePointers.current.values());
+        const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        const currentCenter = {
+            x: (pts[0].x + pts[1].x) / 2,
+            y: (pts[0].y + pts[1].y) / 2
+        };
+        
+        if (lastPinchDist.current && lastPinchCenter.current) {
+            const zoomDelta = currentDist / lastPinchDist.current;
+            
+            const dx = currentCenter.x - lastPinchCenter.current.x;
+            const dy = currentCenter.y - lastPinchCenter.current.y;
+            
+            const rect = canvasRef.current.getBoundingClientRect();
+            const mouseX = currentCenter.x - rect.left;
+            const mouseY = currentCenter.y - rect.top;
+            
+            setZoom(prevZoom => {
+               const calculatedZoom = Math.max(0.1, Math.min(5, prevZoom * zoomDelta));
+               setPan(prevPan => {
+                   const nx = mouseX - (mouseX - (prevPan.x + dx)) * (calculatedZoom / prevZoom);
+                   const ny = mouseY - (mouseY - (prevPan.y + dy)) * (calculatedZoom / prevZoom);
+                   return { x: nx, y: ny };
+               });
+               return calculatedZoom;
+            });
+        }
+        
+        lastPinchDist.current = currentDist;
+        lastPinchCenter.current = currentCenter;
+        return;
+    }
+
     const pos = getMousePos(e);
     const now = Date.now();
     const shouldEmit = now - lastEmitTime.current > 50; // Throttle to 20fps to save bandwidth
@@ -978,6 +1038,12 @@ const Board = () => {
   };
 
   const onPointerUp = (e) => {
+    activePointers.current.delete(e.pointerId);
+    if (activePointers.current.size < 2) {
+        lastPinchDist.current = null;
+        lastPinchCenter.current = null;
+    }
+    
     if (activePointerId.current !== e.pointerId) return;
     activePointerId.current = null;
     

@@ -474,7 +474,7 @@ const Board = () => {
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [redraw]);
+  }, []);
 
   const emitCanvasUpdate = (newElements) => {
     if (socket) {

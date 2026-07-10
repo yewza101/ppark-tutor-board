@@ -147,7 +147,7 @@ const Toolbar = ({
               <input 
                 type="range" 
                 min="1" 
-                max="50" 
+                max={currentTool === 'eraser' ? "200" : "50"}
                 value={presetSizes[activeSizeIndex]}
                 onChange={(e) => {
                   const newSize = parseInt(e.target.value);

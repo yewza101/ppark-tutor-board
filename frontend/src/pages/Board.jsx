@@ -113,7 +113,12 @@ const Board = () => {
   const { user, token } = useAuthStore();
   
   const canvasRef = useRef(null);
+  const draftCanvasRef = useRef(null);
   const containerRef = useRef(null);
+  
+  const fullRedrawRef = useRef(null);
+  const redrawBaseRef = useRef(null);
+  const redrawDraftRef = useRef(null);
   
   const [socket, setSocket] = useState(null);
   
@@ -181,10 +186,10 @@ const Board = () => {
     // We use a ref for redraw to avoid stale closures in socket listeners
     let isRedrawPending = false;
     const triggerRedraw = () => {
-      if (!isRedrawPending && redrawRef.current) {
+      if (!isRedrawPending && fullRedrawRef.current) {
         isRedrawPending = true;
         requestAnimationFrame(() => {
-          if (redrawRef.current) redrawRef.current();
+          if (fullRedrawRef.current) fullRedrawRef.current();
           isRedrawPending = false;
         });
       }
@@ -204,7 +209,7 @@ const Board = () => {
       } else {
         remotePaths.current[data.socketId] = data.path;
       }
-      if (redrawRef.current) redrawRef.current();
+      if (fullRedrawRef.current) fullRedrawRef.current();
     });
 
     newSocket.on('draw-stroke', (data) => {
@@ -242,13 +247,13 @@ const Board = () => {
     newSocket.on('update-element', (data) => {
       elementsRef.current = elementsRef.current.map(el => el.id === data.element.id ? data.element : el);
       setElements([...elementsRef.current]);
-      if (redrawRef.current) redrawRef.current();
+      if (fullRedrawRef.current) fullRedrawRef.current();
     });
 
     newSocket.on('delete-element', ({ elementId }) => {
       elementsRef.current = elementsRef.current.filter(el => el.id !== elementId);
       setElements([...elementsRef.current]);
-      if (redrawRef.current) redrawRef.current();
+      if (fullRedrawRef.current) fullRedrawRef.current();
     });
 
     newSocket.on('cursor-move', (data) => {
@@ -272,111 +277,132 @@ const Board = () => {
   // We need to keep a ref to the latest redraw to avoid stale closures in socket events
   const redrawRef = useRef(null);
 
-  // Redraw canvas whenever elements, zoom, or pan changes
-  const redraw = useCallback(() => {
+  const drawElement = useCallback((ctx, el, currentZoom) => {
+    ctx.beginPath();
+    ctx.strokeStyle = el.tool === 'eraser' ? 'rgba(0,0,0,1)' : el.color;
+    ctx.globalCompositeOperation = el.tool === 'eraser' ? 'destination-out' : 'source-over';
+    
+    // Width can be dynamic based on pressure if available in points, but here we just use el.size
+    ctx.lineWidth = el.size;
+
+    if (el.tool === 'laser') {
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = el.color;
+      ctx.strokeStyle = '#ffffff'; 
+      ctx.lineWidth = Math.max(2, el.size / 2);
+    } else {
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
+    }
+
+    if (el.type === 'lasso') {
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 1 / currentZoom;
+      ctx.setLineDash([5 / currentZoom, 5 / currentZoom]);
+      ctx.beginPath();
+      if (el.points.length > 0) {
+        ctx.moveTo(el.points[0].x, el.points[0].y);
+        for (let i = 1; i < el.points.length; i++) {
+          ctx.lineTo(el.points[i].x, el.points[i].y);
+        }
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      return;
+    }
+    
+    if (el.type === 'path') {
+      if (el.points.length > 0) {
+        let pts = [];
+        const drawSmooth = (points) => {
+            if (points.length === 1) {
+                ctx.moveTo(points[0].x, points[0].y);
+                ctx.lineTo(points[0].x + 0.1, points[0].y + 0.1);
+            } else if (points.length === 2) {
+                ctx.moveTo(points[0].x, points[0].y);
+                ctx.lineTo(points[1].x, points[1].y);
+            } else {
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length - 1; i++) {
+                    const xc = (points[i].x + points[i + 1].x) / 2;
+                    const yc = (points[i].y + points[i + 1].y) / 2;
+                    ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+                }
+                ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+            }
+        };
+
+        for (let i = 0; i < el.points.length; i++) {
+          if (el.points[i] === null) {
+            if (pts.length > 0) drawSmooth(pts);
+            pts = [];
+          } else {
+            pts.push(el.points[i]);
+          }
+        }
+        if (pts.length > 0) drawSmooth(pts);
+        ctx.stroke();
+      }
+    } else if (el.type === 'line') {
+      ctx.moveTo(el.x1, el.y1);
+      ctx.lineTo(el.x2, el.y2);
+      ctx.stroke();
+    } else if (el.type === 'rectangle') {
+      ctx.rect(el.x, el.y, el.w, el.h);
+      ctx.stroke();
+    } else if (el.type === 'circle') {
+      const r = Math.sqrt(Math.pow(el.w, 2) + Math.pow(el.h, 2));
+      ctx.arc(el.x, el.y, r, 0, 2 * Math.PI);
+      ctx.stroke();
+    } else if (el.type === 'image') {
+      if (!imageCacheRef.current[el.url]) {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.src = el.url;
+        img.onload = () => {
+          imageCacheRef.current[el.url] = img;
+          if (fullRedrawRef.current) fullRedrawRef.current();
+        };
+        imageCacheRef.current[el.url] = 'loading';
+      } else if (imageCacheRef.current[el.url] !== 'loading') {
+        const img = imageCacheRef.current[el.url];
+        ctx.drawImage(img, el.x, el.y, el.w, el.h);
+      }
+    }
+  }, []);
+
+  const redrawBase = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     
-    // Clear canvas
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Apply zoom and pan
+    
     ctx.translate(pan.x, pan.y);
     ctx.scale(zoom, zoom);
-
-    // Draw elements
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    const drawElement = (el) => {
-      ctx.beginPath();
-      ctx.strokeStyle = el.tool === 'eraser' ? 'rgba(0,0,0,1)' : el.color;
-        ctx.globalCompositeOperation = el.tool === 'eraser' ? 'destination-out' : 'source-over';
-      ctx.lineWidth = el.size;
+    elementsRef.current.forEach(el => drawElement(ctx, el, zoom));
+  }, [zoom, pan, drawElement]);
 
-      if (el.tool === 'laser') {
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = el.color;
-        ctx.strokeStyle = '#ffffff'; 
-        ctx.lineWidth = Math.max(2, el.size / 2);
-      } else {
-        ctx.shadowBlur = 0;
-        ctx.shadowColor = 'transparent';
-      }
-
-      if (el.type === 'lasso') {
-        ctx.strokeStyle = '#3b82f6';
-        ctx.lineWidth = 1 / zoom;
-        ctx.setLineDash([5 / zoom, 5 / zoom]);
-        ctx.beginPath();
-        if (el.points.length > 0) {
-          ctx.moveTo(el.points[0].x, el.points[0].y);
-          for (let i = 1; i < el.points.length; i++) {
-            ctx.lineTo(el.points[i].x, el.points[i].y);
-          }
-          ctx.stroke();
-        }
-        ctx.setLineDash([]);
-        return;
-      }
-      if (el.type === 'path') {
-        if (el.points.length > 0) {
-          let isStarting = true;
-          for (let i = 0; i < el.points.length; i++) {
-            if (el.points[i] === null) {
-              isStarting = true;
-            } else {
-              if (isStarting) {
-                ctx.moveTo(el.points[i].x, el.points[i].y);
-                isStarting = false;
-              } else {
-                ctx.lineTo(el.points[i].x, el.points[i].y);
-              }
-            }
-          }
-          ctx.stroke();
-        }
-      } else if (el.type === 'line') {
-        ctx.moveTo(el.x1, el.y1);
-        ctx.lineTo(el.x2, el.y2);
-        ctx.stroke();
-      } else if (el.type === 'rectangle') {
-        ctx.rect(el.x, el.y, el.w, el.h);
-        ctx.stroke();
-      } else if (el.type === 'circle') {
-        const r = Math.sqrt(Math.pow(el.w, 2) + Math.pow(el.h, 2));
-        ctx.arc(el.x, el.y, r, 0, 2 * Math.PI);
-        ctx.stroke();
-      } else if (el.type === 'image') {
-        if (!imageCacheRef.current[el.url]) {
-          const img = new Image();
-          img.crossOrigin = 'Anonymous';
-          img.src = el.url;
-          img.onload = () => {
-            imageCacheRef.current[el.url] = img;
-            redraw();
-          };
-          imageCacheRef.current[el.url] = 'loading';
-        } else if (imageCacheRef.current[el.url] !== 'loading') {
-          const img = imageCacheRef.current[el.url];
-          ctx.drawImage(img, el.x, el.y, el.w, el.h);
-        }
-      }
-
-    };
-
-    elementsRef.current.forEach(drawElement);
-
-    // Draw current shape being drawn (if any)
-    if (currentPath.current) {
-      drawElement(currentPath.current);
-    }
+  const redrawDraft = useCallback(() => {
+    const canvas = draftCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     
-    // Draw remote paths
-    Object.values(remotePaths.current).forEach(drawElement);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Transparent!
+    
+    ctx.translate(pan.x, pan.y);
+    ctx.scale(zoom, zoom);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (currentPath.current) drawElement(ctx, currentPath.current, zoom);
+    Object.values(remotePaths.current).forEach(el => drawElement(ctx, el, zoom));
 
     if (selectedElementIds.length > 0) {
       let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
@@ -417,14 +443,20 @@ const Board = () => {
         ctx.strokeRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
       }
     }
-  }, [zoom, pan, selectedElementIds]);
- // Removed elements from deps since we use elementsRef
+  }, [zoom, pan, selectedElementIds, drawElement]);
+
+  const fullRedraw = useCallback(() => {
+    redrawBase();
+    redrawDraft();
+  }, [redrawBase, redrawDraft]);
 
   useEffect(() => {
     elementsRef.current = elements;
-    redrawRef.current = redraw;
-    redraw();
-  }, [elements, redraw]);
+    redrawBaseRef.current = redrawBase;
+    redrawDraftRef.current = redrawDraft;
+    fullRedrawRef.current = fullRedraw;
+    fullRedraw();
+  }, [elements, fullRedraw, redrawBase, redrawDraft]);
 
   // Handle window resize
   useEffect(() => {
@@ -432,7 +464,11 @@ const Board = () => {
       if (containerRef.current && canvasRef.current) {
         canvasRef.current.width = containerRef.current.clientWidth;
         canvasRef.current.height = containerRef.current.clientHeight;
-        redraw();
+        if (draftCanvasRef.current) {
+          draftCanvasRef.current.width = containerRef.current.clientWidth;
+          draftCanvasRef.current.height = containerRef.current.clientHeight;
+        }
+        if (fullRedrawRef.current) fullRedrawRef.current();
       }
     };
     handleResize();
@@ -576,6 +612,15 @@ const Board = () => {
       const el = elementsRef.current[j];
       
       if (el.type === 'path') {
+        const box = getElementBoundingBox(el);
+        if (box.minX !== undefined) {
+            const pad = brushSize;
+            if (pos.x < box.minX - pad || pos.x > box.maxX + pad || pos.y < box.minY - pad || pos.y > box.maxY + pad) {
+                newElements.push(el);
+                continue;
+            }
+        }
+        
         let pathCut = false;
         const newPaths = [];
         let currentSubPath = [];
@@ -630,7 +675,7 @@ const Board = () => {
     if (changed) {
       elementsRef.current = newElements;
       setElements([...elementsRef.current]);
-      if (redrawRef.current) redrawRef.current();
+      if (fullRedrawRef.current) fullRedrawRef.current();
     }
   };
 
@@ -641,7 +686,7 @@ const Board = () => {
       if (deletedEl.id) {
         elementsRef.current.splice(elIdx, 1);
         setElements([...elementsRef.current]);
-        if (redrawRef.current) redrawRef.current();
+        if (fullRedrawRef.current) fullRedrawRef.current();
         if (socket && socket.id) {
           socket.emit('delete-element', { boardId: studentId, elementId: deletedEl.id });
         }
@@ -678,7 +723,7 @@ const Board = () => {
     if (currentTool === 'select') {
       if (currentPath.current && currentPath.current.type === 'lasso') {
         currentPath.current.points.push(pos);
-        requestAnimationFrame(redraw);
+        requestAnimationFrame(() => { if (redrawDraftRef.current) redrawDraftRef.current(); });
         return;
       }
       if (dragContext.current) {
@@ -748,7 +793,7 @@ const Board = () => {
         
         if (shouldEmit) lastEmitTime.current = now;
         setElements([...elementsRef.current]);
-        requestAnimationFrame(redraw);
+        requestAnimationFrame(() => { if (fullRedrawRef.current) fullRedrawRef.current(); });
         return;
       }
     }
@@ -781,7 +826,7 @@ const Board = () => {
     }
     
     // Request animation frame for smooth redraw
-    requestAnimationFrame(redraw);
+    requestAnimationFrame(() => { if (redrawDraftRef.current) redrawDraftRef.current(); });
     
     if (socket && socket.id && shouldEmit) {
       socket.emit('draw-progress', { 
@@ -824,7 +869,7 @@ const Board = () => {
       }
       currentPath.current = null;
       isDrawing.current = false;
-      redraw();
+      if (fullRedrawRef.current) fullRedrawRef.current();
       return;
     }
 
@@ -872,7 +917,7 @@ const Board = () => {
       });
     }
     
-    redraw();
+    if (fullRedrawRef.current) fullRedrawRef.current();
   };
 
   const onWheel = (e) => {
@@ -940,7 +985,7 @@ const Board = () => {
         newEl.h = (img.height / img.width) * newEl.w;
         elementsRef.current = [...elementsRef.current, newEl];
         setElements([...elementsRef.current]);
-        redraw();
+        if (fullRedrawRef.current) fullRedrawRef.current();
         if (socket && socket.id) {
           socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
         }
@@ -1010,13 +1055,17 @@ const Board = () => {
 
       <div 
         ref={containerRef} 
-        className={`flex-1 w-full h-full touch-none ${
+        className={`relative flex-1 w-full h-full touch-none ${
           isPanning ? 'cursor-grabbing' : (currentTool === 'pan' ? 'cursor-grab' : (currentTool === 'pencil' || currentTool === 'eraser' ? 'cursor-crosshair' : 'cursor-default'))
         }`}
       >
         <canvas
           ref={canvasRef}
-          className="block w-full h-full bg-white touch-none"
+          className="absolute inset-0 w-full h-full bg-white touch-none"
+        />
+        <canvas
+          ref={draftCanvasRef}
+          className="absolute inset-0 w-full h-full touch-none"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}

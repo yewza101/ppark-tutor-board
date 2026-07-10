@@ -37,10 +37,10 @@ const Toolbar = ({
   ];
 
   return (
-    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex items-center gap-2 z-10 border border-gray-100">
+    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex items-center gap-2 z-10 border border-gray-100 max-w-[95vw] overflow-x-auto overflow-y-hidden no-scrollbar">
       
       {/* Tools */}
-      <div className="flex gap-1 border-r border-gray-200 pr-2">
+      <div className="flex gap-1 border-r border-gray-200 pr-2 shrink-0">
         {tools.map(tool => (
           <button
             key={tool.id}
@@ -58,7 +58,7 @@ const Toolbar = ({
       </div>
 
       {/* Color Palette & Size */}
-      <div className="flex items-center gap-2 border-r border-gray-200 pr-2 pl-1">
+      <div className="flex items-center gap-2 border-r border-gray-200 pr-2 pl-1 shrink-0">
         <div className="flex flex-wrap w-32 gap-1 justify-center">
           {presetColors.map(color => (
             <button
@@ -95,7 +95,7 @@ const Toolbar = ({
       </div>
 
       {/* History */}
-      <div className="flex gap-1 border-r border-gray-200 pr-2 pl-1">
+      <div className="flex gap-1 border-r border-gray-200 pr-2 pl-1 shrink-0">
         <button 
           onClick={handleUndo} 
           disabled={!canUndo}
@@ -115,7 +115,7 @@ const Toolbar = ({
       </div>
 
       {/* Zoom & Clear */}
-      <div className="flex gap-1 pl-1">
+      <div className="flex gap-1 pl-1 shrink-0">
         <button onClick={handleZoomIn} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Zoom In">
           <ZoomIn size={20} />
         </button>

@@ -69,7 +69,7 @@ const Toolbar = ({
       <div className="flex items-center gap-2 border-r border-gray-200 pr-2 pl-1 shrink-0">
         {needsColor && (
           <>
-            <div className="flex flex-wrap w-32 gap-1 justify-center">
+            <div className="flex gap-1.5 justify-center items-center">
           {presetColors.map(color => (
             <button
               key={color}

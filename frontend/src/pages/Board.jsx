@@ -133,6 +133,7 @@ const getElementBoundingBox = (el) => {
 };
 
 const isElementInLasso = (el, lassoPoints) => {
+  if (el.locked) return false; // Skip locked elements
   if (el.type === 'path' && el.points) {
     return el.points.some(p => p !== null && isPointInPolygon(p, lassoPoints));
   } else {
@@ -453,6 +454,31 @@ const Board = () => {
         ctx.textBaseline = 'top';
         ctx.fillText(el.text || '', el.x || 0, el.y || 0);
       }
+      
+      // Draw lock indicator for locked elements
+      if (el.locked) {
+        const box = getElementBoundingBox(el);
+        if (box.minX !== undefined) {
+          const iconSize = 16 / (zoomLevel || 1);
+          const ix = box.minX - iconSize * 0.5;
+          const iy = box.minY - iconSize * 1.2;
+          ctx.save();
+          ctx.fillStyle = 'rgba(100, 116, 139, 0.7)';
+          ctx.beginPath();
+          // Lock body
+          const bx = ix, by = iy + iconSize * 0.4;
+          const bw = iconSize, bh = iconSize * 0.6;
+          ctx.roundRect(bx, by, bw, bh, iconSize * 0.1);
+          ctx.fill();
+          // Lock shackle
+          ctx.strokeStyle = 'rgba(100, 116, 139, 0.7)';
+          ctx.lineWidth = iconSize * 0.15;
+          ctx.beginPath();
+          ctx.arc(ix + iconSize * 0.5, iy + iconSize * 0.4, iconSize * 0.3, Math.PI, 0);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
     } catch (err) {
       console.error('Failed to draw element:', el, err);
     } finally {
@@ -699,8 +725,10 @@ const Board = () => {
           e.target.setPointerCapture(e.pointerId);
           return;
         }
+        // Check if any selected elements are locked - if ALL are locked, don't allow move
+        const anyUnlocked = selectedElementIds.some(id => !elementsRef.current.find(e => e.id === id)?.locked);
         
-        if (pos.x >= gMinX - pad && pos.x <= gMaxX + pad && pos.y >= gMinY - pad && pos.y <= gMaxY + pad) {
+        if (anyUnlocked && pos.x >= gMinX - pad && pos.x <= gMaxX + pad && pos.y >= gMinY - pad && pos.y <= gMaxY + pad) {
           dragContext.current = { 
             type: 'move', startX: pos.x, startY: pos.y, 
             isMoved: false,
@@ -824,7 +852,7 @@ const Board = () => {
   };
 
   const checkObjectEraserCollision = (pos) => {
-    const elIdx = elementsRef.current.findLastIndex(el => isPointInElement(pos, el, brushSize));
+    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && isPointInElement(pos, el, brushSize));
     if (elIdx !== -1) {
       const deletedEl = elementsRef.current[elIdx];
       if (deletedEl.id) {
@@ -1073,7 +1101,7 @@ const Board = () => {
         // Tap-to-select: if the lasso was just a tap/click, try to select the element under it
         const tapPos = lassoPoints[0];
         const hitIdx = elementsRef.current.findLastIndex(el => 
-          el.tool !== 'eraser' && isPointInElement(tapPos, el, 5)
+          el.tool !== 'eraser' && !el.locked && isPointInElement(tapPos, el, 5)
         );
         if (hitIdx !== -1) {
           const hitEl = elementsRef.current[hitIdx];
@@ -1633,7 +1661,7 @@ const Board = () => {
 
   const handleDeleteSelection = () => {
       const remainingElements = elementsRef.current.filter(el => {
-          if (selectedElementIds.includes(el.id)) {
+          if (selectedElementIds.includes(el.id) && !el.locked) {
               if (socket && socket.id) socket.emit('delete-element', { boardId: studentId, elementId: el.id });
               return false;
           }
@@ -1661,6 +1689,25 @@ const Board = () => {
           localStorage.setItem('ppark_clipboard', jsonStr);
           setContextMenuPos(null);
       }
+  };
+
+  const handleToggleLock = () => {
+      const newElements = elementsRef.current.map(el => {
+          if (selectedElementIds.includes(el.id)) {
+              const updatedEl = { ...el, locked: !el.locked };
+              if (socket && socket.id) socket.emit('update-element', { boardId: studentId, element: updatedEl });
+              return updatedEl;
+          }
+          return el;
+      });
+      setElements(() => {
+          elementsRef.current = newElements;
+          return newElements;
+      });
+      setSelectedElementIds([]);
+      activeLassoPathRef.current = null;
+      setContextMenuPos(null);
+      if (fullRedrawRef.current) fullRedrawRef.current();
   };
 
   const handleDuplicateSelection = () => {
@@ -1827,6 +1874,14 @@ const Board = () => {
                </button>
                <button onClick={handleDeleteSelection} className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors" title="Delete">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+               </button>
+               <div className="w-px h-5 bg-gray-200 mx-1"></div>
+               <button onClick={handleToggleLock} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-700 transition-colors" title={selectedElementIds.some(id => elementsRef.current.find(e => e.id === id)?.locked) ? 'Unlock' : 'Lock'}>
+                  {selectedElementIds.some(id => elementsRef.current.find(e => e.id === id)?.locked) ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  )}
                </button>
 
                {showColorPicker && (

@@ -316,6 +316,8 @@ const Board = () => {
           for (let i = 1; i < el.points.length; i++) {
             ctx.lineTo(el.points[i].x, el.points[i].y);
           }
+          // Auto-close the lasso path to show the selection area
+          ctx.lineTo(el.points[0].x, el.points[0].y);
           ctx.stroke();
         }
         ctx.setLineDash([]);

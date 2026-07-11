@@ -315,9 +315,11 @@ const MiniBoard = ({ student, token }) => {
             const contentW = (maxX - minX) + (padding * 2);
             const contentH = (maxY - minY) + (padding * 2);
             
-            // Calculate scale to fit content within canvas
-            const scaleX = canvas.width / contentW;
-            const scaleY = canvas.height / contentH;
+            const cWidth = canvas.width || 300;
+            const cHeight = canvas.height || 200;
+
+            const scaleX = cWidth / contentW;
+            const scaleY = cHeight / contentH;
             
             // Cap the scale at 2.0 so we don't zoom in absurdly on a single dot, but allow it to "fit perfectly"
             scale = Math.min(scaleX, scaleY, 2.0); 
@@ -326,8 +328,8 @@ const MiniBoard = ({ student, token }) => {
             const scaledContentW = contentW * scale;
             const scaledContentH = contentH * scale;
             
-            translateX = (canvas.width - scaledContentW) / 2 - (minX - padding) * scale;
-            translateY = (canvas.height - scaledContentH) / 2 - (minY - padding) * scale;
+            translateX = (cWidth - scaledContentW) / 2 - (minX - padding) * scale;
+            translateY = (cHeight - scaledContentH) / 2 - (minY - padding) * scale;
             
             console.log(`MiniBoard focus: canvas[${canvas.width}x${canvas.height}], content[W:${contentW} H:${contentH}], bounds[X:${minX}-${maxX} Y:${minY}-${maxY}], scale:${scale}, trans[${translateX}, ${translateY}]`);
         }

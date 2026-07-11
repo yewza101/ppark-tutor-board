@@ -250,98 +250,95 @@ const MiniBoard = ({ student, token }) => {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Default pan/zoom
-    let scale = 0.3;
-    let translateX = 0;
-    let translateY = 0;
+    ctx.save();
+    const cWidth = canvas.width || 300;
+    const cHeight = canvas.height || 200;
 
-    // Combine elements and remote paths to calculate bounds
-    const allElements = [...elements];
-    Object.values(remotePaths.current).forEach(path => {
-        if (path) allElements.push(path);
-    });
-
-    if (allElements.length > 0) {
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        
-        allElements.forEach(el => {
-            if (!el) return;
-            if (el.type === 'path' || el.type === 'lasso') {
-                if (el.points && Array.isArray(el.points)) {
-                    el.points.forEach(pt => {
-                        if (pt) {
-                            if (pt[0] < minX) minX = pt[0];
-                            if (pt[0] > maxX) maxX = pt[0];
-                            if (pt[1] < minY) minY = pt[1];
-                            if (pt[1] > maxY) maxY = pt[1];
-                        }
-                    });
-                }
-            } else if (el.type === 'line') {
-                let pX1 = Number(el.x1) || 0;
-                let pX2 = Number(el.x2) || 0;
-                let pY1 = Number(el.y1) || 0;
-                let pY2 = Number(el.y2) || 0;
-                minX = Math.min(minX, pX1, pX2);
-                maxX = Math.max(maxX, pX1, pX2);
-                minY = Math.min(minY, pY1, pY2);
-                maxY = Math.max(maxY, pY1, pY2);
-            } else if (el.x !== undefined && el.y !== undefined) {
-                // rectangle, circle, image, text, postit
-                const x = Number(el.x) || 0;
-                const y = Number(el.y) || 0;
-                const w = Number(el.w) || 100;
-                const h = Number(el.h) || 100;
-                
-                let elMinX = Math.min(x, x + w);
-                let elMaxX = Math.max(x, x + w);
-                let elMinY = Math.min(y, y + h);
-                let elMaxY = Math.max(y, y + h);
-                
-                if (el.type === 'circle') {
-                    const r = Math.sqrt((w*w) + (h*h));
-                    elMinX = x - r; elMaxX = x + r;
-                    elMinY = y - r; elMaxY = y + r;
-                }
-                
-                if (elMinX < minX) minX = elMinX;
-                if (elMaxX > maxX) maxX = elMaxX;
-                if (elMinY < minY) minY = elMinY;
-                if (elMaxY > maxY) maxY = elMaxY;
-            }
+    if (remoteViewport.current) {
+        const { pan, zoom, width, height } = remoteViewport.current;
+        const screenW = width || 1920;
+        const screenH = height || 1080;
+        const scaleX = cWidth / screenW;
+        const scaleY = cHeight / screenH;
+        const baseScale = Math.min(scaleX, scaleY);
+        const scaledScreenW = screenW * baseScale;
+        const scaledScreenH = screenH * baseScale;
+        const offsetX = (cWidth - scaledScreenW) / 2;
+        const offsetY = (cHeight - scaledScreenH) / 2;
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(baseScale, baseScale);
+        ctx.translate(pan.x || 0, pan.y || 0);
+        ctx.scale(zoom || 1, zoom || 1);
+    } else {
+        let scale = 0.3;
+        let translateX = 0;
+        let translateY = 0;
+        const allElements = [...elements];
+        Object.values(remotePaths.current).forEach(path => {
+            if (path) allElements.push(path);
         });
-
-        // If bounds are valid
-        if (minX !== Infinity && maxX !== -Infinity && !isNaN(minX) && !isNaN(maxX)) {
-            const padding = 20; // Padding around the content
-            const contentW = (maxX - minX) + (padding * 2);
-            const contentH = (maxY - minY) + (padding * 2);
-            
-            const cWidth = canvas.width || 300;
-            const cHeight = canvas.height || 200;
-
-            const scaleX = cWidth / contentW;
-            const scaleY = cHeight / contentH;
-            
-            // Cap the scale at 2.0 so we don't zoom in absurdly on a single dot, but allow it to "fit perfectly"
-            scale = Math.min(scaleX, scaleY, 2.0); 
-            
-            // Center the content
-            const scaledContentW = contentW * scale;
-            const scaledContentH = contentH * scale;
-            
-            translateX = (cWidth - scaledContentW) / 2 - (minX - padding) * scale;
-            translateY = (cHeight - scaledContentH) / 2 - (minY - padding) * scale;
-            
-            console.log(`MiniBoard focus: canvas[${canvas.width}x${canvas.height}], content[W:${contentW} H:${contentH}], bounds[X:${minX}-${maxX} Y:${minY}-${maxY}], scale:${scale}, trans[${translateX}, ${translateY}]`);
+        if (allElements.length > 0) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            allElements.forEach(el => {
+                if (!el) return;
+                if (el.type === 'path' || el.type === 'lasso') {
+                    if (el.points && Array.isArray(el.points)) {
+                        el.points.forEach(pt => {
+                            if (pt) {
+                                if (pt[0] < minX) minX = pt[0];
+                                if (pt[0] > maxX) maxX = pt[0];
+                                if (pt[1] < minY) minY = pt[1];
+                                if (pt[1] > maxY) maxY = pt[1];
+                            }
+                        });
+                    }
+                } else if (el.type === 'line') {
+                    let pX1 = Number(el.x1) || 0;
+                    let pX2 = Number(el.x2) || 0;
+                    let pY1 = Number(el.y1) || 0;
+                    let pY2 = Number(el.y2) || 0;
+                    minX = Math.min(minX, pX1, pX2);
+                    maxX = Math.max(maxX, pX1, pX2);
+                    minY = Math.min(minY, pY1, pY2);
+                    maxY = Math.max(maxY, pY1, pY2);
+                } else if (el.x !== undefined && el.y !== undefined) {
+                    const x = Number(el.x) || 0;
+                    const y = Number(el.y) || 0;
+                    const w = Number(el.w) || 100;
+                    const h = Number(el.h) || 100;
+                    let elMinX = Math.min(x, x + w);
+                    let elMaxX = Math.max(x, x + w);
+                    let elMinY = Math.min(y, y + h);
+                    let elMaxY = Math.max(y, y + h);
+                    if (el.type === 'circle') {
+                        const r = Math.sqrt((w*w) + (h*h));
+                        elMinX = x - r; elMaxX = x + r;
+                        elMinY = y - r; elMaxY = y + r;
+                    }
+                    if (elMinX < minX) minX = elMinX;
+                    if (elMaxX > maxX) maxX = elMaxX;
+                    if (elMinY < minY) minY = elMinY;
+                    if (elMaxY > maxY) maxY = elMaxY;
+                }
+            });
+            if (minX !== Infinity && maxX !== -Infinity && !isNaN(minX) && !isNaN(maxX)) {
+                const padding = 20;
+                const contentW = (maxX - minX) + (padding * 2);
+                const contentH = (maxY - minY) + (padding * 2);
+                const scaleX = cWidth / contentW;
+                const scaleY = cHeight / contentH;
+                scale = Math.min(scaleX, scaleY, 2.0);
+                const scaledContentW = contentW * scale;
+                const scaledContentH = contentH * scale;
+                translateX = (cWidth - scaledContentW) / 2 - (minX - padding) * scale;
+                translateY = (cHeight - scaledContentH) / 2 - (minY - padding) * scale;
+            }
         }
+        ctx.translate(translateX, translateY);
+        ctx.scale(scale, scale);
     }
 
-    ctx.save();
-    ctx.translate(translateX, translateY);
-    ctx.scale(scale, scale);
-    
-    elements.forEach(el => drawElement(ctx, el));
+        elements.forEach(el => drawElement(ctx, el));
     
     // Draw in-progress strokes
     Object.values(remotePaths.current).forEach(path => {

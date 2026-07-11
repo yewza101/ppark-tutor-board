@@ -195,6 +195,30 @@ const Board = () => {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [bgTemplate, setBgTemplate] = useState('blank');
+  const [viewportSize, setViewportSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+
+  // Keep track of window size
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportSize({ w: window.innerWidth, h: window.innerHeight });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Broadcast viewport changes
+  useEffect(() => {
+    if (socket && socket.connected) {
+      socket.emit('viewport-update', {
+        boardId: studentId,
+        pan,
+        zoom,
+        width: viewportSize.w,
+        height: viewportSize.h,
+        socketId: socket.id
+      });
+    }
+  }, [socket, pan, zoom, viewportSize, studentId]);
   const [textInput, setTextInput] = useState(null);
   
   // Collaborative state

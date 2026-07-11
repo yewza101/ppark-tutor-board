@@ -75,6 +75,10 @@ io.on('connection', (socket) => {
     socket.to(`board_${data.boardId}`).emit('draw-progress', data);
   });
 
+  socket.on('viewport-update', (data) => {
+    socket.to(`board_${data.boardId}`).emit('viewport-update', data);
+  });
+
   socket.on('draw-stroke', async (data) => {
     // data = { boardId, stroke, socketId }
     socket.to(`board_${data.boardId}`).emit('draw-stroke', data);

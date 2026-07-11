@@ -67,11 +67,27 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
-  socket.on('join-board', (boardId) => {
+  socket.on('join-board', (data) => {
+    let boardId, role;
+    if (typeof data === 'object' && data !== null) {
+      boardId = data.boardId;
+      role = data.role;
+    } else {
+      boardId = data; // Backward compatibility
+      role = 'student';
+    }
+    
     socket.join(`board_${boardId}`);
     socketRooms[socket.id] = boardId;
+    socketRoles[socket.id] = role;
+    
     boardConnectionCount[boardId] = (boardConnectionCount[boardId] || 0) + 1;
-    console.log(`Socket ${socket.id} joined board_${boardId} (${boardConnectionCount[boardId]} connected)`);
+    
+    if (role === 'student') {
+      studentConnectionCount[boardId] = (studentConnectionCount[boardId] || 0) + 1;
+    }
+    
+    console.log(`Socket ${socket.id} joined board_${boardId} as ${role} (Total: ${boardConnectionCount[boardId]})`);
   });
 
   // Cache logic moved to boardCache.js
@@ -140,9 +156,20 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', async () => {
     const boardId = socketRooms[socket.id];
+    const role = socketRoles[socket.id];
+    
     if (boardId) {
       socket.to(`board_${boardId}`).emit('cursor-leave', socket.id);
+      
       delete socketRooms[socket.id];
+      delete socketRoles[socket.id];
+      
+      if (role === 'student') {
+        studentConnectionCount[boardId] = Math.max(0, (studentConnectionCount[boardId] || 1) - 1);
+        if (studentConnectionCount[boardId] === 0) {
+          delete studentConnectionCount[boardId];
+        }
+      }
       
       // Decrement connection count and evict cache if no one is left
       boardConnectionCount[boardId] = (boardConnectionCount[boardId] || 1) - 1;

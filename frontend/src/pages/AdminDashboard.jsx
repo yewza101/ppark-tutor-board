@@ -12,6 +12,7 @@ const AdminDashboard = () => {
   const [newGroupName, setNewGroupName] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [activeBoards, setActiveBoards] = useState([]);
   
   const { user, token, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -22,7 +23,22 @@ const AdminDashboard = () => {
       return;
     }
     fetchStudents();
-  }, [user, navigate]);
+    
+    const fetchActiveBoards = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/api/admin/active-boards`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setActiveBoards(res.data || []);
+      } catch (err) {
+        // silently fail
+      }
+    };
+    
+    fetchActiveBoards();
+    const interval = setInterval(fetchActiveBoards, 5000);
+    return () => clearInterval(interval);
+  }, [user, navigate, token]);
 
   const fetchStudents = async () => {
     try {
@@ -178,8 +194,15 @@ const AdminDashboard = () => {
                   ).map(([groupName, groupStudents]) => (
                     <div key={groupName} className="border border-gray-200 rounded-xl overflow-hidden">
                       <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-                        <div className="font-bold text-gray-700">
-                          {groupName} <span className="text-sm font-normal text-gray-500 ml-2">({groupStudents.length} students)</span>
+                        <div className="font-bold text-gray-700 flex items-center gap-2">
+                          {groupName} 
+                          <span className="text-sm font-normal text-gray-500">({groupStudents.length} students)</span>
+                          {groupStudents.filter(s => activeBoards.includes(s.id)).length > 0 && (
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                              {groupStudents.filter(s => activeBoards.includes(s.id)).length} Online
+                            </span>
+                          )}
                         </div>
                         <button
                           onClick={() => navigate(`/monitor/${encodeURIComponent(groupName)}`)}
@@ -200,7 +223,12 @@ const AdminDashboard = () => {
                           <tbody>
                             {groupStudents.map((student) => (
                               <tr key={student.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                                <td className="py-3 px-4 font-medium">{student.username}</td>
+                                <td className="py-3 px-4 font-medium flex items-center gap-2">
+                                  {student.username}
+                                  {activeBoards.includes(student.id) && (
+                                    <span className="flex items-center justify-center w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" title="Online / Active"></span>
+                                  )}
+                                </td>
                                 <td className="py-3 px-4 text-sm text-gray-500">
                                   {new Date(student.created_at).toLocaleDateString()}
                                 </td>

@@ -34,6 +34,10 @@ app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/boards', boardRouter);
 
+app.get('/api/admin/active-boards', (req, res) => {
+  res.json(Object.keys(boardConnectionCount));
+});
+
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB max per file

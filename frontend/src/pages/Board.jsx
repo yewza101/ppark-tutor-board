@@ -68,6 +68,13 @@ const isPointInElement = (pt, el, radius) => {
   if (el.tool === 'eraser') return false;
   const hitRadius = radius + (el.size ? el.size / 2 : 5);
   
+  let checkPt = pt;
+  if (el.rotation && (el.type === 'image' || el.type === 'math' || el.type === 'rectangle')) {
+    const cx = el.x + el.w / 2;
+    const cy = el.y + el.h / 2;
+    checkPt = rotatePoint(pt.x, pt.y, cx, cy, -el.rotation);
+  }
+  
   if (el.type === 'path') {
     if (!el.points || el.points.length === 0) return false;
     for (let i = 0; i < el.points.length - 1; i++) {
@@ -105,6 +112,14 @@ const isPointInElement = (pt, el, radius) => {
   return false;
 };
 
+
+const rotatePoint = (px, py, cx, cy, angle) => {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const nx = (cos * (px - cx)) - (sin * (py - cy)) + cx;
+  const ny = (sin * (px - cx)) + (cos * (py - cy)) + cy;
+  return { x: nx, y: ny };
+};
 
 const isPointInPolygon = (point, vs) => {
   let x = point.x, y = point.y;
@@ -700,15 +715,55 @@ const Board = () => {
             }
             ctx.lineTo(activeLassoPathRef.current[0].x, activeLassoPathRef.current[0].y);
             ctx.stroke();
+            ctx.setLineDash([]);
+        } else if (selectedElementIds.length === 1) {
+            ctx.setLineDash([]);
+            const el = elementsRef.current.find(e => e.id === selectedElementIds[0]);
+            if (el && (el.type === 'image' || el.type === 'math' || el.type === 'rectangle')) {
+                const cx = el.x + el.w / 2;
+                const cy = el.y + el.h / 2;
+                ctx.save();
+                if (el.rotation) {
+                    ctx.translate(cx, cy);
+                    ctx.rotate(el.rotation);
+                    ctx.translate(-cx, -cy);
+                }
+                ctx.strokeRect(el.x - pad, el.y - pad, el.w + pad*2, el.h + pad*2);
+                
+                ctx.fillStyle = '#ffffff';
+                const hs = 12 / zoom;
+                // Scale handle
+                ctx.fillRect(el.x + el.w + pad - hs/2, el.y + el.h + pad - hs/2, hs, hs);
+                ctx.strokeRect(el.x + el.w + pad - hs/2, el.y + el.h + pad - hs/2, hs, hs);
+                
+                // Rotate handle
+                ctx.beginPath();
+                ctx.arc(el.x + el.w / 2, el.y - pad - 20/zoom, hs/2, 0, Math.PI*2);
+                ctx.fill();
+                ctx.stroke();
+                
+                // Line connecting rotate handle to box
+                ctx.beginPath();
+                ctx.moveTo(el.x + el.w / 2, el.y - pad);
+                ctx.lineTo(el.x + el.w / 2, el.y - pad - 20/zoom + hs/2);
+                ctx.stroke();
+                
+                ctx.restore();
+            } else {
+                ctx.strokeRect(gMinX - pad, gMinY - pad, gMaxX - gMinX + pad*2, gMaxY - gMinY + pad*2);
+                ctx.fillStyle = '#ffffff';
+                const hs = 12 / zoom;
+                ctx.fillRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
+                ctx.strokeRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
+            }
         } else {
             ctx.strokeRect(gMinX - pad, gMinY - pad, gMaxX - gMinX + pad*2, gMaxY - gMinY + pad*2);
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#ffffff';
+            const hs = 12 / zoom;
+            ctx.fillRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
+            ctx.strokeRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
         }
-        ctx.setLineDash([]);
-        
-        ctx.fillStyle = '#ffffff';
-        const hs = 12 / zoom;
-        ctx.fillRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
-        ctx.strokeRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
       }
     }
   }, [zoom, pan, selectedElementIds, drawElement]);
@@ -826,6 +881,61 @@ const Board = () => {
         });
         const pad = 5 / zoom;
         const hs = 25 / zoom;
+        
+        if (selectedElementIds.length === 1) {
+            const el = elementsRef.current.find(e => e.id === selectedElementIds[0]);
+            if (el && (el.type === 'image' || el.type === 'math' || el.type === 'rectangle')) {
+                let localPos = pos;
+                if (el.rotation) {
+                    localPos = rotatePoint(pos.x, pos.y, el.x + el.w/2, el.y + el.h/2, -el.rotation);
+                }
+                const cx = el.x + el.w / 2;
+                const cy = el.y - pad - 20/zoom;
+                
+                if (Math.hypot(localPos.x - cx, localPos.y - cy) <= hs) {
+                    dragContext.current = {
+                        type: 'rotate', startX: pos.x, startY: pos.y,
+                        origAngle: el.rotation || 0,
+                        cx: el.x + el.w/2, cy: el.y + el.h/2,
+                        origElements: [JSON.parse(JSON.stringify(el))]
+                    };
+                    startPoint.current = { x: e.clientX, y: e.clientY };
+                    isDrawing.current = true;
+                    e.target.setPointerCapture(e.pointerId);
+                    return;
+                }
+                
+                if (localPos.x >= el.x + el.w + pad - hs && localPos.x <= el.x + el.w + pad + hs &&
+                    localPos.y >= el.y + el.h + pad - hs && localPos.y <= el.y + el.h + pad + hs) {
+                    dragContext.current = {
+                        type: 'scale', startX: pos.x, startY: pos.y,
+                        isMoved: false,
+                        gMinX: el.x, gMinY: el.y, gMaxX: el.x + el.w, gMaxY: el.y + el.h,
+                        origElements: [JSON.parse(JSON.stringify(el))],
+                        origLassoPath: null
+                    };
+                    startPoint.current = { x: e.clientX, y: e.clientY };
+                    isDrawing.current = true;
+                    e.target.setPointerCapture(e.pointerId);
+                    return;
+                }
+                
+                if (!el.locked) {
+                    if (localPos.x >= el.x - pad && localPos.x <= el.x + el.w + pad && localPos.y >= el.y - pad && localPos.y <= el.y + el.h + pad) {
+                        dragContext.current = {
+                            type: 'move', startX: pos.x, startY: pos.y,
+                            isMoved: false,
+                            origElements: [JSON.parse(JSON.stringify(el))],
+                            origLassoPath: null
+                        };
+                        startPoint.current = { x: e.clientX, y: e.clientY };
+                        isDrawing.current = true;
+                        e.target.setPointerCapture(e.pointerId);
+                        return;
+                    }
+                }
+            }
+        }
         
         if (pos.x >= gMaxX + pad - hs && pos.x <= gMaxX + pad + hs && pos.y >= gMaxY + pad - hs && pos.y <= gMaxY + pad + hs) {
           dragContext.current = { 
@@ -1107,7 +1217,25 @@ const Board = () => {
           if (elIdx === -1) return;
           const el = elementsRef.current[elIdx];
           
-          if (dragContext.current.type === 'move') {
+          if (dragContext.current.type === 'rotate') {
+            const dx = pos.x - dragContext.current.cx;
+            const dy = pos.y - dragContext.current.cy;
+            // Calculate angle, adjust by Math.PI/2 because rotate handle is at the top (which is -y)
+            // Math.atan2(dy, dx) returns angle from positive x-axis. Top is -PI/2.
+            let angle = Math.atan2(dy, dx) + Math.PI/2;
+            
+            // Apply snapping to common angles if Shift is held
+            if (e.shiftKey) {
+                const snapAngle = Math.PI / 12; // 15 degrees
+                angle = Math.round(angle / snapAngle) * snapAngle;
+            }
+            
+            elementsRef.current.forEach(el => {
+                if (selectedElementIds.includes(el.id)) {
+                    el.rotation = angle;
+                }
+            });
+          } else if (dragContext.current.type === 'move') {
             if (el.type === 'path') {
                el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { x: origEl.points[i].x + dx, y: origEl.points[i].y + dy }));
                el.path2d = null;
@@ -1149,7 +1277,25 @@ const Board = () => {
         });
         
         if (dragContext.current.origLassoPath) {
-            if (dragContext.current.type === 'move') {
+            if (dragContext.current.type === 'rotate') {
+            const dx = pos.x - dragContext.current.cx;
+            const dy = pos.y - dragContext.current.cy;
+            // Calculate angle, adjust by Math.PI/2 because rotate handle is at the top (which is -y)
+            // Math.atan2(dy, dx) returns angle from positive x-axis. Top is -PI/2.
+            let angle = Math.atan2(dy, dx) + Math.PI/2;
+            
+            // Apply snapping to common angles if Shift is held
+            if (e.shiftKey) {
+                const snapAngle = Math.PI / 12; // 15 degrees
+                angle = Math.round(angle / snapAngle) * snapAngle;
+            }
+            
+            elementsRef.current.forEach(el => {
+                if (selectedElementIds.includes(el.id)) {
+                    el.rotation = angle;
+                }
+            });
+          } else if (dragContext.current.type === 'move') {
                 activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => ({
                     x: p.x + dx, y: p.y + dy
                 }));

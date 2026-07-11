@@ -139,6 +139,14 @@ const MiniBoard = ({ student, token }) => {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
+      if (el.rotation) {
+        const cx = el.x + (el.w || 0) / 2;
+        const cy = el.y + (el.h || 0) / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate(el.rotation);
+        ctx.translate(-cx, -cy);
+      }
+
       if (el.type === 'path') {
         if (el.points && el.points.length > 0) {
           let p2dToDraw = el.path2d;

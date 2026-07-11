@@ -1,0 +1,302 @@
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { io } from 'socket.io-client';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import { API_URL } from '../config';
+import { getStroke } from 'perfect-freehand';
+
+// Utility for freehand path
+const getSvgPathFromStroke = (stroke) => {
+  if (!stroke.length) return '';
+  const d = stroke.reduce(
+    (acc, [x0, y0], i, arr) => {
+      const [x1, y1] = arr[(i + 1) % arr.length];
+      acc.push(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+      return acc;
+    },
+    ['M', ...stroke[0], 'Q']
+  );
+  d.push('Z');
+  return d.join(' ');
+};
+
+const MiniBoard = ({ student, token }) => {
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
+  const navigate = useNavigate();
+  
+  const [elements, setElements] = useState([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const imageCacheRef = useRef({});
+
+  // Fetch initial board state
+  useEffect(() => {
+    const fetchBoard = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/api/boards/${student.id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setElements(res.data.elements || []);
+      } catch (err) {
+        console.error('Failed to load board for', student.username, err);
+      }
+    };
+    fetchBoard();
+  }, [student.id, token]);
+
+  // Socket connection
+  useEffect(() => {
+    const socket = io(API_URL);
+    
+    socket.on('connect', () => {
+      setIsConnected(true);
+      socket.emit('join-board', student.id);
+    });
+
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+    });
+
+    socket.on('canvas-update', (updatedElements) => {
+      setElements(updatedElements);
+    });
+
+    socket.on('draw-stroke', (data) => {
+      setElements(prev => [...prev, data.stroke]);
+    });
+
+    socket.on('undo', () => {
+      setElements(prev => prev.slice(0, -1));
+    });
+
+    socket.on('clear-canvas', () => {
+      setElements([]);
+    });
+
+    socket.on('update-element', (data) => {
+      setElements(prev => prev.map(el => el.id === data.element.id ? data.element : el));
+    });
+
+    socket.on('delete-element', ({ elementId }) => {
+      setElements(prev => prev.filter(el => el.id !== elementId));
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [student.id]);
+
+  const drawElement = useCallback((ctx, el) => {
+    if (!el || !el.type) return;
+    try {
+      ctx.save();
+      ctx.beginPath();
+      
+      if (el.tool === 'highlighter') {
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.globalAlpha = 0.6;
+      }
+      
+      ctx.strokeStyle = el.color || '#000000';
+      ctx.fillStyle = el.color || '#000000';
+      ctx.lineWidth = el.size || 5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (el.type === 'path') {
+        if (el.points && el.points.length > 0) {
+          let p2dToDraw = el.path2d;
+          if (!p2dToDraw || !(p2dToDraw instanceof Path2D)) {
+            const p2d = new Path2D();
+            let pts = [];
+            
+            const drawFreehand = (points) => {
+                if (!points || points.length === 0) return;
+                const strokePoints = getStroke(points, {
+                    size: el.size || 5,
+                    thinning: 0.5,
+                    smoothing: 0.5,
+                    streamline: 0.5,
+                    simulatePressure: true
+                });
+                const pathData = getSvgPathFromStroke(strokePoints);
+                if (pathData) {
+                    const segmentP2d = new Path2D(pathData);
+                    p2d.addPath(segmentP2d);
+                }
+            };
+
+            for (let i = 0; i < el.points.length; i++) {
+              if (el.points[i] === null || el.points[i] === undefined) {
+                if (pts.length > 0) drawFreehand(pts);
+                pts = [];
+              } else {
+                pts.push(el.points[i]);
+              }
+            }
+            if (pts.length > 0) drawFreehand(pts);
+            
+            try { el.path2d = p2d; } catch (e) {}
+            p2dToDraw = p2d;
+          }
+          ctx.fill(p2dToDraw);
+        }
+      } else if (el.type === 'line') {
+        ctx.moveTo(el.x1 || 0, el.y1 || 0);
+        ctx.lineTo(el.x2 || 0, el.y2 || 0);
+        ctx.stroke();
+      } else if (el.type === 'rectangle') {
+        ctx.strokeRect(el.x, el.y, el.w, el.h);
+      } else if (el.type === 'circle') {
+        const r = Math.sqrt(Math.pow(el.w || 0, 2) + Math.pow(el.h || 0, 2));
+        ctx.arc(el.x || 0, el.y || 0, r, 0, 2 * Math.PI);
+        ctx.stroke();
+      } else if (el.type === 'image' || el.type === 'math') {
+        if (!imageCacheRef.current[el.url]) {
+          const img = new Image();
+          img.crossOrigin = 'Anonymous';
+          img.src = el.url;
+          img.onload = () => {
+            imageCacheRef.current[el.url] = img;
+            redrawCanvas(); // Force redraw when image loads
+          };
+          imageCacheRef.current[el.url] = 'loading';
+        } else if (imageCacheRef.current[el.url] !== 'loading') {
+          const img = imageCacheRef.current[el.url];
+          ctx.drawImage(img, el.x || 0, el.y || 0, el.w || 100, el.h || 100);
+        }
+      } else if (el.type === 'text') {
+        ctx.font = `${el.size || 20}px sans-serif`;
+        ctx.fillStyle = el.color || '#000000';
+        ctx.textBaseline = 'top';
+        ctx.fillText(el.text || '', el.x || 0, el.y || 0);
+      } else if (el.type === 'postit') {
+        const padding = 12;
+        const fontSize = el.size || 20;
+        ctx.font = `${fontSize}px "Comic Sans MS", "Caveat", cursive, sans-serif`;
+        ctx.textBaseline = 'top';
+        
+        const lines = (el.text || '').split('\n');
+        let maxTextW = 50;
+        for(let line of lines) {
+           const w = ctx.measureText(line).width;
+           if (w > maxTextW) maxTextW = w;
+        }
+        
+        const w = maxTextW + (padding * 2);
+        const h = (lines.length * (fontSize * 1.5)) + (padding * 2);
+        
+        // Shadow
+        ctx.shadowColor = 'rgba(0,0,0,0.15)';
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetX = 3;
+        ctx.shadowOffsetY = 3;
+        
+        // Post-it body
+        ctx.fillStyle = el.color || '#fef08a';
+        ctx.fillRect(el.x || 0, el.y || 0, w, h);
+        
+        // Reset shadow
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.shadowColor = 'transparent';
+        
+        // Text
+        ctx.fillStyle = '#000000';
+        lines.forEach((line, i) => {
+            ctx.fillText(line, (el.x || 0) + padding, (el.y || 0) + padding + (i * fontSize * 1.5));
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      ctx.restore();
+    }
+  }, []);
+
+  const redrawCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set a solid background for the thumbnail
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Default pan/zoom applied for thumbnails to fit more of the board
+    // We'll scale it down so we can see a larger portion of the student's canvas
+    const scale = 0.3; // 30% scale
+    ctx.save();
+    ctx.scale(scale, scale);
+    
+    elements.forEach(el => drawElement(ctx, el));
+    
+    ctx.restore();
+  }, [elements, drawElement]);
+
+  useEffect(() => {
+    let animationFrameId;
+    
+    const render = () => {
+      redrawCanvas();
+      animationFrameId = requestAnimationFrame(render);
+    };
+    render();
+    
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [redrawCanvas]);
+
+  // Handle resizing of the thumbnail canvas
+  useEffect(() => {
+    const resizeObserver = new ResizeObserver(entries => {
+      if (!canvasRef.current || entries.length === 0) return;
+      const { width, height } = entries[0].contentRect;
+      
+      // Set actual pixel dimensions to match display size for crisp rendering
+      canvasRef.current.width = width;
+      canvasRef.current.height = height;
+    });
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  return (
+    <div 
+      className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer flex flex-col h-64 relative group"
+      onClick={() => navigate(`/board/${student.id}`)}
+    >
+      {/* Header */}
+      <div className="bg-gray-50 px-3 py-2 border-b border-gray-100 flex justify-between items-center z-10">
+        <span className="font-semibold text-gray-700 truncate">{student.username}</span>
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-300'}`} title={isConnected ? 'Connected' : 'Offline'}></span>
+        </div>
+      </div>
+      
+      {/* Canvas Container */}
+      <div ref={containerRef} className="flex-1 w-full h-full relative overflow-hidden bg-gray-100">
+        <canvas 
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full"
+        />
+        
+        {/* Overlay hover effect */}
+        <div className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/5 transition-colors flex items-center justify-center">
+            <span className="opacity-0 group-hover:opacity-100 bg-white/90 text-blue-600 px-4 py-2 rounded-lg font-medium shadow-sm transition-all transform scale-95 group-hover:scale-100">
+                View Board
+            </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MiniBoard;

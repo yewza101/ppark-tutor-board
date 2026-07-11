@@ -177,8 +177,16 @@ const AdminDashboard = () => {
                     }, {})
                   ).map(([groupName, groupStudents]) => (
                     <div key={groupName} className="border border-gray-200 rounded-xl overflow-hidden">
-                      <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-gray-700">
-                        {groupName} <span className="text-sm font-normal text-gray-500 ml-2">({groupStudents.length} students)</span>
+                      <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                        <div className="font-bold text-gray-700">
+                          {groupName} <span className="text-sm font-normal text-gray-500 ml-2">({groupStudents.length} students)</span>
+                        </div>
+                        <button
+                          onClick={() => navigate(`/monitor/${encodeURIComponent(groupName)}`)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <ExternalLink size={16} /> Monitor Group
+                        </button>
                       </div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">

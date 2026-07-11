@@ -267,7 +267,7 @@ const MiniBoard = ({ student, token }) => {
         allElements.forEach(el => {
             if (!el) return;
             if (el.type === 'path' || el.type === 'lasso') {
-                if (el.points) {
+                if (el.points && Array.isArray(el.points)) {
                     el.points.forEach(pt => {
                         if (pt) {
                             if (pt[0] < minX) minX = pt[0];
@@ -300,8 +300,8 @@ const MiniBoard = ({ student, token }) => {
                 
                 if (el.type === 'circle') {
                     const r = Math.sqrt((w*w) + (h*h));
-                    elMinX = el.x - r; elMaxX = el.x + r;
-                    elMinY = el.y - r; elMaxY = el.y + r;
+                    elMinX = x - r; elMaxX = x + r;
+                    elMinY = y - r; elMaxY = y + r;
                 }
                 
                 if (elMinX < minX) minX = elMinX;
@@ -357,8 +357,13 @@ const MiniBoard = ({ student, token }) => {
     if (!redrawPending.current) {
       redrawPending.current = true;
       requestAnimationFrame(() => {
-        redrawCanvas();
-        redrawPending.current = false;
+        try {
+          redrawCanvas();
+        } catch (e) {
+          console.error("MiniBoard render error:", e);
+        } finally {
+          redrawPending.current = false;
+        }
       });
     }
   }, [redrawCanvas]);

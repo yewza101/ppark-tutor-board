@@ -219,6 +219,24 @@ const Board = () => {
       });
     }
   }, [socket, pan, zoom, viewportSize, studentId]);
+
+  // Heartbeat to sync viewport for newly joined admins
+  useEffect(() => {
+    if (!socket) return;
+    const interval = setInterval(() => {
+      if (socket.connected) {
+        socket.emit('viewport-update', {
+          boardId: studentId,
+          pan,
+          zoom,
+          width: viewportSize.w,
+          height: viewportSize.h,
+          socketId: socket.id
+        });
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [socket, pan, zoom, viewportSize, studentId]);
   const [textInput, setTextInput] = useState(null);
   
   // Collaborative state

@@ -434,6 +434,13 @@ const Board = () => {
     if (!el || !el.type) return;
     try {
       ctx.save();
+      if (el.rotation) {
+          const cx = (el.x || 0) + (el.w || 0) / 2;
+          const cy = (el.y || 0) + (el.h || 0) / 2;
+          ctx.translate(cx, cy);
+          ctx.rotate(el.rotation);
+          ctx.translate(-cx, -cy);
+      }
       ctx.beginPath();
       
       ctx.strokeStyle = el.tool === 'eraser' ? 'rgba(0,0,0,1)' : el.color;

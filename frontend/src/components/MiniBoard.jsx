@@ -28,6 +28,7 @@ const MiniBoard = ({ student, token }) => {
   const [elements, setElements] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const imageCacheRef = useRef({});
+  const remotePaths = useRef({});
 
   // Fetch initial board state
   useEffect(() => {
@@ -36,7 +37,18 @@ const MiniBoard = ({ student, token }) => {
         const res = await axios.get(`${API_URL}/api/boards/${student.id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        setElements(res.data.elements || []);
+        
+        let parsed = [];
+        if (res.data.canvas_data) {
+            parsed = res.data.canvas_data;
+            if (typeof parsed === 'string') {
+              try { parsed = JSON.parse(parsed); } catch(e) { parsed = []; }
+            }
+            if (typeof parsed === 'string') {
+              try { parsed = JSON.parse(parsed); } catch(e) { parsed = []; }
+            }
+        }
+        setElements(Array.isArray(parsed) ? parsed : []);
       } catch (err) {
         console.error('Failed to load board for', student.username, err);
       }
@@ -61,8 +73,17 @@ const MiniBoard = ({ student, token }) => {
       setElements(updatedElements);
     });
 
+    socket.on('draw-progress', (data) => {
+      if (data.path === null) {
+        delete remotePaths.current[data.socketId];
+      } else {
+        remotePaths.current[data.socketId] = data.path;
+      }
+    });
+
     socket.on('draw-stroke', (data) => {
       setElements(prev => [...prev, data.stroke]);
+      delete remotePaths.current[data.socketId];
     });
 
     socket.on('undo', () => {
@@ -234,6 +255,11 @@ const MiniBoard = ({ student, token }) => {
     ctx.scale(scale, scale);
     
     elements.forEach(el => drawElement(ctx, el));
+    
+    // Draw in-progress strokes
+    Object.values(remotePaths.current).forEach(path => {
+      if (path) drawElement(ctx, path);
+    });
     
     ctx.restore();
   }, [elements, drawElement]);

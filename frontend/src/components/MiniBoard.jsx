@@ -65,7 +65,7 @@ const MiniBoard = ({ student, token }) => {
     
     socket.on('connect', () => {
       setIsConnected(true);
-      socket.emit('join-board', student.id);
+      socket.emit('join-board', { boardId: student.id, role: 'admin' });
     });
 
     socket.on('disconnect', () => {

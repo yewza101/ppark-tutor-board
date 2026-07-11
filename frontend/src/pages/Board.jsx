@@ -305,7 +305,7 @@ const Board = () => {
     const newSocket = io(API_URL);
     setSocket(newSocket);
 
-    newSocket.emit('join-board', studentId);
+    newSocket.emit('join-board', { boardId: studentId, role: 'student' });
     newSocket.emit('viewport-update', {
       boardId: studentId,
       pan: { x: 0, y: 0 },

@@ -16,7 +16,9 @@ const { boardStates, getBoardState, saveBoardState, flushSave } = require('./boa
 const app = express();
 const server = http.createServer(app);
 const socketRooms = {}; // Track which board each socket is in
-const boardConnectionCount = {}; // Track how many sockets are in each board
+const boardConnectionCount = {}; // Track total sockets (for memory eviction)
+const studentConnectionCount = {}; // Track only student sockets (for online status)
+const socketRoles = {}; // Track role of each socket (admin/student)
 
 // Use a wide cors configuration since this is a local setup
 const io = new Server(server, {
@@ -35,7 +37,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/boards', boardRouter);
 
 app.get('/api/admin/active-boards', (req, res) => {
-  res.json(Object.keys(boardConnectionCount));
+  res.json(Object.keys(studentConnectionCount));
 });
 
 const upload = multer({ 

@@ -27,6 +27,7 @@ const MiniBoard = ({ student, token }) => {
   
   const [elements, setElements] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [redrawTrigger, setRedrawTrigger] = useState(0);
   const imageCacheRef = useRef({});
   const remotePaths = useRef({});
 
@@ -79,6 +80,7 @@ const MiniBoard = ({ student, token }) => {
       } else {
         remotePaths.current[data.socketId] = data.path;
       }
+      setRedrawTrigger(prev => prev + 1);
     });
 
     socket.on('draw-stroke', (data) => {
@@ -265,16 +267,14 @@ const MiniBoard = ({ student, token }) => {
   }, [elements, drawElement]);
 
   useEffect(() => {
-    let animationFrameId;
-    
-    const render = () => {
-      redrawCanvas();
-      animationFrameId = requestAnimationFrame(render);
-    };
-    render();
+    // Only redraw when redrawCanvas function changes (which means elements changed)
+    // or when redrawTrigger changes (which means remotePaths changed).
+    const animationFrameId = requestAnimationFrame(() => {
+        redrawCanvas();
+    });
     
     return () => cancelAnimationFrame(animationFrameId);
-  }, [redrawCanvas]);
+  }, [redrawCanvas, redrawTrigger]);
 
   // Handle resizing of the thumbnail canvas
   useEffect(() => {
@@ -285,6 +285,9 @@ const MiniBoard = ({ student, token }) => {
       // Set actual pixel dimensions to match display size for crisp rendering
       canvasRef.current.width = width;
       canvasRef.current.height = height;
+      
+      // Force redraw when size changes
+      setRedrawTrigger(prev => prev + 1);
     });
 
     if (containerRef.current) {

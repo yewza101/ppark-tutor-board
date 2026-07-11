@@ -195,13 +195,22 @@ const MiniBoard = ({ student, token }) => {
           ctx.drawImage(img, el.x || 0, el.y || 0, el.w || 100, el.h || 100);
         }
       } else if (el.type === 'text') {
-        ctx.font = `${el.size || 20}px sans-serif`;
+        let fSize = el.size || 20;
+        const minPhysicalFont = 12;
+        if (fSize * currentScale < minPhysicalFont) {
+          fSize = minPhysicalFont / currentScale;
+        }
+        ctx.font = `${fSize}px sans-serif`;
         ctx.fillStyle = el.color || '#000000';
         ctx.textBaseline = 'top';
         ctx.fillText(el.text || '', el.x || 0, el.y || 0);
       } else if (el.type === 'postit') {
         const padding = 12;
-        const fontSize = el.size || 20;
+        let fontSize = el.size || 20;
+        const minPhysicalFont = 10;
+        if (fontSize * currentScale < minPhysicalFont) {
+          fontSize = minPhysicalFont / currentScale;
+        }
         ctx.font = `${fontSize}px "Comic Sans MS", "Caveat", cursive, sans-serif`;
         ctx.textBaseline = 'top';
         

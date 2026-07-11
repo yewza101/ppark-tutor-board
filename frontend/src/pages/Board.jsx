@@ -977,17 +977,7 @@ const Board = () => {
       if (hitIdx !== -1) {
         const hitEl = elementsRef.current[hitIdx];
         setSelectedElementIds([hitEl.id]);
-        // Create a synthetic lasso path around the element's bounding box
-        const box = getElementBoundingBox(hitEl);
-        if (box.minX !== undefined) {
-          const synPad = 5;
-          activeLassoPathRef.current = [
-            {x: box.minX - synPad, y: box.minY - synPad},
-            {x: box.maxX + synPad, y: box.minY - synPad},
-            {x: box.maxX + synPad, y: box.maxY + synPad},
-            {x: box.minX - synPad, y: box.maxY + synPad}
-          ];
-        }
+        activeLassoPathRef.current = null;
         // Start move drag immediately (unless element is locked)
         if (!hitEl.locked) {
           startPoint.current = { x: e.clientX, y: e.clientY };
@@ -1349,7 +1339,13 @@ const Board = () => {
     }
     
     // Request animation frame for smooth redraw
-    requestAnimationFrame(() => { if (redrawDraftRef.current) redrawDraftRef.current(); });
+    requestAnimationFrame(() => { 
+        if (dragContext.current && (dragContext.current.type === 'move' || dragContext.current.type === 'rotate' || dragContext.current.type === 'scale')) {
+            if (fullRedrawRef.current) fullRedrawRef.current();
+        } else {
+            if (redrawDraftRef.current) redrawDraftRef.current(); 
+        }
+    });
     
     if (socket && socket.id && shouldEmit) {
       socket.emit('draw-progress', { 
@@ -1407,17 +1403,7 @@ const Board = () => {
         if (hitIdx !== -1) {
           const hitEl = elementsRef.current[hitIdx];
           setSelectedElementIds([hitEl.id]);
-          // Create a synthetic lasso path around the element's bounding box
-          const box = getElementBoundingBox(hitEl);
-          if (box.minX !== undefined) {
-            const pad = 5;
-            activeLassoPathRef.current = [
-              {x: box.minX - pad, y: box.minY - pad},
-              {x: box.maxX + pad, y: box.minY - pad},
-              {x: box.maxX + pad, y: box.maxY + pad},
-              {x: box.minX - pad, y: box.maxY + pad}
-            ];
-          }
+          activeLassoPathRef.current = null;
         } else {
           setSelectedElementIds([]);
           activeLassoPathRef.current = null;

@@ -165,6 +165,7 @@ const generateId = () => Date.now().toString(36) + Math.random().toString(36).su
 
 const Board = () => {
   const { studentId } = useParams();
+  const navigate = useNavigate();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const queryGroup = searchParams.get('group');

@@ -278,16 +278,23 @@ const MiniBoard = ({ student, token }) => {
                     });
                 }
             } else if (el.type === 'line') {
-                minX = Math.min(minX, el.x1, el.x2);
-                maxX = Math.max(maxX, el.x1, el.x2);
-                minY = Math.min(minY, el.y1, el.y2);
-                maxY = Math.max(maxY, el.y1, el.y2);
+                let pX1 = el.x1 || 0;
+                let pX2 = el.x2 || 0;
+                let pY1 = el.y1 || 0;
+                let pY2 = el.y2 || 0;
+                minX = Math.min(minX, pX1, pX2);
+                maxX = Math.max(maxX, pX1, pX2);
+                minY = Math.min(minY, pY1, pY2);
+                maxY = Math.max(maxY, pY1, pY2);
             } else if (el.x !== undefined && el.y !== undefined) {
                 // rectangle, circle, image, text, postit
                 const w = el.w || 100;
                 const h = el.h || 100;
-                // For circle, x,y is center and w,h relates to radius, but basic box is fine
-                let elMinX = el.x, elMinY = el.y, elMaxX = el.x + w, elMaxY = el.y + h;
+                
+                let elMinX = Math.min(el.x, el.x + w);
+                let elMaxX = Math.max(el.x, el.x + w);
+                let elMinY = Math.min(el.y, el.y + h);
+                let elMaxY = Math.max(el.y, el.y + h);
                 
                 if (el.type === 'circle') {
                     const r = Math.sqrt((w*w) + (h*h));
@@ -303,7 +310,7 @@ const MiniBoard = ({ student, token }) => {
         });
 
         // If bounds are valid
-        if (minX !== Infinity && maxX !== -Infinity) {
+        if (minX !== Infinity && maxX !== -Infinity && !isNaN(minX) && !isNaN(maxX)) {
             const padding = 50; // Padding around the content
             const contentW = (maxX - minX) + (padding * 2);
             const contentH = (maxY - minY) + (padding * 2);
@@ -312,8 +319,8 @@ const MiniBoard = ({ student, token }) => {
             const scaleX = canvas.width / contentW;
             const scaleY = canvas.height / contentH;
             
-            // Use the smaller scale to ensure it fits, but cap it so it doesn't zoom in absurdly on a single dot
-            scale = Math.min(scaleX, scaleY, 1.0); 
+            // Cap the scale at 0.3 so it always looks like a thumbnail miniature
+            scale = Math.min(scaleX, scaleY, 0.35); 
             
             // Center the content
             const scaledContentW = contentW * scale;
@@ -321,6 +328,8 @@ const MiniBoard = ({ student, token }) => {
             
             translateX = (canvas.width - scaledContentW) / 2 - (minX - padding) * scale;
             translateY = (canvas.height - scaledContentH) / 2 - (minY - padding) * scale;
+            
+            console.log(`MiniBoard focus: canvas[${canvas.width}x${canvas.height}], content[W:${contentW} H:${contentH}], bounds[X:${minX}-${maxX} Y:${minY}-${maxY}], scale:${scale}, trans[${translateX}, ${translateY}]`);
         }
     }
 

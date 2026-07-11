@@ -347,15 +347,26 @@ const MiniBoard = ({ student, token }) => {
     ctx.restore();
   }, [elements, drawElement]);
 
-  useEffect(() => {
-    // Only redraw when redrawCanvas function changes (which means elements changed)
-    // or when redrawTrigger changes (which means remotePaths changed).
-    const animationFrameId = requestAnimationFrame(() => {
+  const frameRef = useRef(null);
+
+  const triggerRedraw = useCallback(() => {
+    if (!frameRef.current) {
+      frameRef.current = requestAnimationFrame(() => {
         redrawCanvas();
-    });
-    
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [redrawCanvas, redrawTrigger]);
+        frameRef.current = null;
+      });
+    }
+  }, [redrawCanvas]);
+
+  useEffect(() => {
+    triggerRedraw();
+    return () => {
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    };
+  }, [triggerRedraw, redrawTrigger, elements]);
 
   // Handle resizing of the thumbnail canvas
   useEffect(() => {

@@ -386,7 +386,8 @@ const MiniBoard = ({ student, token }) => {
             activeScale = 0.3; // Fallback
         }
 
-        elements.forEach(el => drawElement(ctx, el, activeScale));
+        elements.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, activeScale));
+        elements.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, activeScale));
         
         // Draw in-progress strokes
         Object.values(remotePaths.current).forEach(path => {

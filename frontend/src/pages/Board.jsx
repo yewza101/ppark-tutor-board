@@ -653,7 +653,8 @@ const Board = () => {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    elementsRef.current.forEach(el => drawElement(ctx, el, zoom));
+    elementsRef.current.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, zoom));
+    elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, zoom));
   }, [zoom, pan, bgTemplate, drawElement]);
 
   const redrawDraft = useCallback(() => {
@@ -807,7 +808,7 @@ const Board = () => {
 
     if (e.button !== 0 && e.pointerType === 'mouse') return; // Only left click for drawing
 
-    if (currentTool === 'select') {
+    if (currentTool === 'select' || currentTool === 'image') {
       const pos = getMousePos(e);
       if (selectedElementIds.length > 0) {
         let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
@@ -857,9 +858,12 @@ const Board = () => {
       }
       
       // Try click-to-select: check if there's an element under the click
-      const hitIdx = elementsRef.current.findLastIndex(el => 
-        el.tool !== 'eraser' && isPointInElement(pos, el, 5)
-      );
+      const hitIdx = elementsRef.current.findLastIndex(el => {
+        if (el.tool === 'eraser') return false;
+        if (currentTool === 'image' && el.type !== 'image') return false;
+        if (currentTool === 'select' && el.type === 'image') return false;
+        return isPointInElement(pos, el, 5);
+      });
       if (hitIdx !== -1) {
         const hitEl = elementsRef.current[hitIdx];
         setSelectedElementIds([hitEl.id]);
@@ -1079,7 +1083,7 @@ const Board = () => {
       return;
     }
 
-    if (currentTool === 'select') {
+    if (currentTool === 'select' || currentTool === 'image') {
       if (currentPath.current && currentPath.current.type === 'lasso') {
         currentPath.current.points.push(pos);
         requestAnimationFrame(() => { if (redrawDraftRef.current) redrawDraftRef.current(); });
@@ -1228,11 +1232,13 @@ const Board = () => {
     }
 
 
-    if (currentTool === 'select' && currentPath.current && currentPath.current.type === 'lasso') {
+    if ((currentTool === 'select' || currentTool === 'image') && currentPath.current && currentPath.current.type === 'lasso') {
       const lassoPoints = currentPath.current.points;
       if (lassoPoints.length > 2) {
         const selectedIds = [];
         elementsRef.current.forEach(el => {
+          if (currentTool === 'image' && el.type !== 'image') return;
+          if (currentTool === 'select' && el.type === 'image') return;
           if (isElementInLasso(el, lassoPoints)) {
             selectedIds.push(el.id);
           }
@@ -1397,7 +1403,8 @@ const Board = () => {
           ctx.save();
           ctx.translate(-minX, -minY);
           
-          elementsRef.current.forEach(el => drawElement(ctx, el, 1));
+          elementsRef.current.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, 1));
+          elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, 1));
           ctx.restore();
           
           const pdf = new jsPDF('p', 'pt', 'a4');

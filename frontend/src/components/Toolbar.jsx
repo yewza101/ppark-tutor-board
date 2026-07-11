@@ -1,7 +1,7 @@
 import { 
   Pencil, Eraser, Circle, Square, Minus, 
   ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon,
-  Highlighter, Type, Download, Sigma, StickyNote
+  Highlighter, Type, Download, Sigma, StickyNote, UploadCloud
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 
@@ -211,11 +211,19 @@ const Toolbar = ({
       >
         <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-col gap-1 border border-gray-100 pointer-events-auto">
           <button
+            onClick={() => setTool('image')}
+            title="Select Image"
+            className={`p-2 rounded-xl transition-colors ${currentTool === 'image' ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+          >
+            <ImageIcon size={20} />
+          </button>
+          
+          <button
             onClick={() => fileInputRef.current?.click()}
             title="Upload Image / PDF"
             className="p-2 text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
           >
-            <ImageIcon size={20} />
+            <UploadCloud size={20} />
           </button>
           <input 
             type="file" 

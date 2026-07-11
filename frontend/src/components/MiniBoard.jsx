@@ -367,7 +367,7 @@ const MiniBoard = ({ student, token }) => {
         const screenH = height || 1080;
         activeScale = Math.min(cWidth / screenW, cHeight / screenH) * (zoom || 1);
     } else {
-        activeScale = scale;
+        activeScale = 0.3; // Fallback to avoid ReferenceError
     }
 
     elements.forEach(el => drawElement(ctx, el, activeScale));

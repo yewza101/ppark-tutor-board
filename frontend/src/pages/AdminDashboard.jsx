@@ -197,10 +197,10 @@ const AdminDashboard = () => {
                         <div className="font-bold text-gray-700 flex items-center gap-2">
                           {groupName} 
                           <span className="text-sm font-normal text-gray-500">({groupStudents.length} students)</span>
-                          {groupStudents.filter(s => activeBoards.includes(s.id)).length > 0 && (
+                          {groupStudents.filter(s => activeBoards.includes(String(s.id))).length > 0 && (
                             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                              {groupStudents.filter(s => activeBoards.includes(s.id)).length} Online
+                              {groupStudents.filter(s => activeBoards.includes(String(s.id))).length} Online
                             </span>
                           )}
                         </div>
@@ -225,7 +225,7 @@ const AdminDashboard = () => {
                               <tr key={student.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                                 <td className="py-3 px-4 font-medium flex items-center gap-2">
                                   {student.username}
-                                  {activeBoards.includes(student.id) && (
+                                  {activeBoards.includes(String(student.id)) && (
                                     <span className="flex items-center justify-center w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" title="Online / Active"></span>
                                   )}
                                 </td>

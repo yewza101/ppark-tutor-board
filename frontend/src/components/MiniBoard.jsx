@@ -262,6 +262,12 @@ const MiniBoard = ({ student, token }) => {
     ctx.fillStyle = remoteViewport.current ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 0, 0, 0.8)';
     ctx.font = '12px sans-serif';
     ctx.fillText(remoteViewport.current ? 'SYNCED' : 'NOT SYNCED', 5, 15);
+    if (remoteViewport.current) {
+        ctx.fillText('P:' + remoteViewport.current.pan.x + ',' + remoteViewport.current.pan.y, 5, 25);
+        ctx.fillText('Z:' + remoteViewport.current.zoom, 5, 35);
+        ctx.fillText('S:' + remoteViewport.current.width + 'x' + remoteViewport.current.height, 5, 45);
+        ctx.fillText('E:' + elements.length, 5, 55);
+    }
     ctx.restore();
 
     ctx.save();
@@ -352,7 +358,8 @@ const MiniBoard = ({ student, token }) => {
         ctx.scale(scale, scale);
     }
 
-        // Calculate the active scale for line width adjustment
+        try {
+    // Calculate the active scale for line width adjustment
     let activeScale = 1.0;
     if (remoteViewport.current) {
         const { width, height, zoom } = remoteViewport.current;
@@ -369,6 +376,14 @@ const MiniBoard = ({ student, token }) => {
     Object.values(remotePaths.current).forEach(path => {
       if (path) drawElement(ctx, path, activeScale);
     });
+    
+    } catch (e) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = 'red';
+        ctx.font = '12px Arial';
+        ctx.fillText(e.message || 'Error', 10, 50);
+        console.error('MiniBoard Draw Error:', e);
+    }
     
     ctx.restore();
   }, [elements, drawElement]);

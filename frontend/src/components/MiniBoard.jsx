@@ -250,10 +250,82 @@ const MiniBoard = ({ student, token }) => {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Default pan/zoom applied for thumbnails to fit more of the board
-    // We'll scale it down so we can see a larger portion of the student's canvas
-    const scale = 0.3; // 30% scale
+    // Default pan/zoom
+    let scale = 0.3;
+    let translateX = 0;
+    let translateY = 0;
+
+    // Combine elements and remote paths to calculate bounds
+    const allElements = [...elements];
+    Object.values(remotePaths.current).forEach(path => {
+        if (path) allElements.push(path);
+    });
+
+    if (allElements.length > 0) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        
+        allElements.forEach(el => {
+            if (!el) return;
+            if (el.type === 'path' || el.type === 'lasso') {
+                if (el.points) {
+                    el.points.forEach(pt => {
+                        if (pt) {
+                            if (pt[0] < minX) minX = pt[0];
+                            if (pt[0] > maxX) maxX = pt[0];
+                            if (pt[1] < minY) minY = pt[1];
+                            if (pt[1] > maxY) maxY = pt[1];
+                        }
+                    });
+                }
+            } else if (el.type === 'line') {
+                minX = Math.min(minX, el.x1, el.x2);
+                maxX = Math.max(maxX, el.x1, el.x2);
+                minY = Math.min(minY, el.y1, el.y2);
+                maxY = Math.max(maxY, el.y1, el.y2);
+            } else if (el.x !== undefined && el.y !== undefined) {
+                // rectangle, circle, image, text, postit
+                const w = el.w || 100;
+                const h = el.h || 100;
+                // For circle, x,y is center and w,h relates to radius, but basic box is fine
+                let elMinX = el.x, elMinY = el.y, elMaxX = el.x + w, elMaxY = el.y + h;
+                
+                if (el.type === 'circle') {
+                    const r = Math.sqrt((w*w) + (h*h));
+                    elMinX = el.x - r; elMaxX = el.x + r;
+                    elMinY = el.y - r; elMaxY = el.y + r;
+                }
+                
+                if (elMinX < minX) minX = elMinX;
+                if (elMaxX > maxX) maxX = elMaxX;
+                if (elMinY < minY) minY = elMinY;
+                if (elMaxY > maxY) maxY = elMaxY;
+            }
+        });
+
+        // If bounds are valid
+        if (minX !== Infinity && maxX !== -Infinity) {
+            const padding = 50; // Padding around the content
+            const contentW = (maxX - minX) + (padding * 2);
+            const contentH = (maxY - minY) + (padding * 2);
+            
+            // Calculate scale to fit content within canvas
+            const scaleX = canvas.width / contentW;
+            const scaleY = canvas.height / contentH;
+            
+            // Use the smaller scale to ensure it fits, but cap it so it doesn't zoom in absurdly on a single dot
+            scale = Math.min(scaleX, scaleY, 1.0); 
+            
+            // Center the content
+            const scaledContentW = contentW * scale;
+            const scaledContentH = contentH * scale;
+            
+            translateX = (canvas.width - scaledContentW) / 2 - (minX - padding) * scale;
+            translateY = (canvas.height - scaledContentH) / 2 - (minY - padding) * scale;
+        }
+    }
+
     ctx.save();
+    ctx.translate(translateX, translateY);
     ctx.scale(scale, scale);
     
     elements.forEach(el => drawElement(ctx, el));

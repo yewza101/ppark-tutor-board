@@ -311,7 +311,7 @@ const MiniBoard = ({ student, token }) => {
 
         // If bounds are valid
         if (minX !== Infinity && maxX !== -Infinity && !isNaN(minX) && !isNaN(maxX)) {
-            const padding = 50; // Padding around the content
+            const padding = 20; // Padding around the content
             const contentW = (maxX - minX) + (padding * 2);
             const contentH = (maxY - minY) + (padding * 2);
             
@@ -319,8 +319,8 @@ const MiniBoard = ({ student, token }) => {
             const scaleX = canvas.width / contentW;
             const scaleY = canvas.height / contentH;
             
-            // Cap the scale at 0.3 so it always looks like a thumbnail miniature
-            scale = Math.min(scaleX, scaleY, 0.35); 
+            // Cap the scale at 2.0 so we don't zoom in absurdly on a single dot, but allow it to "fit perfectly"
+            scale = Math.min(scaleX, scaleY, 2.0); 
             
             // Center the content
             const scaledContentW = contentW * scale;

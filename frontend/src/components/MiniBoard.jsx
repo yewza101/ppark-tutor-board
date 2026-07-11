@@ -28,6 +28,7 @@ const MiniBoard = ({ student, token }) => {
   const [elements, setElements] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [redrawTrigger, setRedrawTrigger] = useState(0);
+  const [renderError, setRenderError] = useState(null);
   const imageCacheRef = useRef({});
   const remotePaths = useRef({});
 
@@ -254,11 +255,11 @@ const MiniBoard = ({ student, token }) => {
   }, []);
 
   const redrawCanvas = useCallback(() => {
+    try {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    
-    // Clear canvas
+    if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Set a solid background for the thumbnail
@@ -367,34 +368,35 @@ const MiniBoard = ({ student, token }) => {
         ctx.scale(scale, scale);
     }
 
-        try {
-    // Calculate the active scale for line width adjustment
-    let activeScale = 1.0;
-    if (remoteViewport.current) {
-        const { width, height, zoom } = remoteViewport.current;
-        const screenW = width || 1920;
-        const screenH = height || 1080;
-        activeScale = Math.min(cWidth / screenW, cHeight / screenH) * (zoom || 1);
-    } else {
-        activeScale = 0.3; // Fallback to avoid ReferenceError
-    }
+    try {
+        // Calculate the active scale for line width adjustment
+        let activeScale = 1.0;
+        if (remoteViewport.current) {
+            const { width, height, zoom } = remoteViewport.current;
+            const screenW = width || 1920;
+            const screenH = height || 1080;
+            activeScale = Math.min(cWidth / screenW, cHeight / screenH) * (zoom || 1);
+        } else {
+            activeScale = 0.3; // Fallback
+        }
 
-    elements.forEach(el => drawElement(ctx, el, activeScale));
-    
-    // Draw in-progress strokes
-    Object.values(remotePaths.current).forEach(path => {
-      if (path) drawElement(ctx, path, activeScale);
-    });
-    
+        elements.forEach(el => drawElement(ctx, el, activeScale));
+        
+        // Draw in-progress strokes
+        Object.values(remotePaths.current).forEach(path => {
+          if (path) drawElement(ctx, path, activeScale);
+        });
+        
     } catch (e) {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = 'red';
-        ctx.font = '12px Arial';
-        ctx.fillText(e.message || 'Error', 10, 50);
-        console.error('MiniBoard Draw Error:', e);
+        console.error('MiniBoard Inner Draw Error:', e);
+        setRenderError(e.message || 'Inner Draw Error');
     }
     
     ctx.restore();
+    } catch (err) {
+        console.error('MiniBoard Fatal Render Error:', err);
+        setRenderError(err.message || 'Fatal Render Error');
+    }
   }, [elements, drawElement]);
 
   const redrawPending = useRef(false);
@@ -454,6 +456,11 @@ const MiniBoard = ({ student, token }) => {
       
       {/* Canvas Container */}
       <div ref={containerRef} className="flex-1 w-full h-full relative overflow-hidden bg-gray-100">
+        {renderError && (
+          <div className="absolute inset-0 z-50 bg-red-100 text-red-600 p-2 text-xs overflow-auto font-mono">
+            <b>CRASH:</b> {renderError}
+          </div>
+        )}
         <canvas 
           ref={canvasRef}
           className="absolute inset-0 w-full h-full"

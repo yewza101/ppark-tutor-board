@@ -250,6 +250,14 @@ const MiniBoard = ({ student, token }) => {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Viewport debug indicator
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = remoteViewport.current ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 0, 0, 0.8)';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(remoteViewport.current ? 'SYNCED' : 'NOT SYNCED', 5, 15);
+    ctx.restore();
+
     ctx.save();
     const cWidth = canvas.width || 300;
     const cHeight = canvas.height || 200;

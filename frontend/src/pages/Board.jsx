@@ -1252,9 +1252,12 @@ const Board = () => {
       } else {
         // Tap-to-select: if the lasso was just a tap/click, try to select the element under it
         const tapPos = lassoPoints[0];
-        const hitIdx = elementsRef.current.findLastIndex(el => 
-          el.tool !== 'eraser' && isPointInElement(tapPos, el, 5)
-        );
+        const hitIdx = elementsRef.current.findLastIndex(el => {
+          if (el.tool === 'eraser') return false;
+          if (currentTool === 'image' && el.type !== 'image') return false;
+          if (currentTool === 'select' && el.type === 'image') return false;
+          return isPointInElement(tapPos, el, 5);
+        });
         if (hitIdx !== -1) {
           const hitEl = elementsRef.current[hitIdx];
           setSelectedElementIds([hitEl.id]);
@@ -2102,9 +2105,8 @@ const Board = () => {
                <div className="h-px bg-gray-100 my-1 mx-2"></div>
                <button 
                   onClick={() => {
-                      setSelectedElementIds(elementsRef.current.map(el => el.id));
+                      setSelectedElementIds(elementsRef.current.filter(el => currentTool === 'image' ? el.type === 'image' : el.type !== 'image').map(el => el.id));
                       setGlobalMenuPos(null);
-                      setCurrentTool('select');
                       if (fullRedrawRef.current) fullRedrawRef.current();
                   }} 
                   className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium"

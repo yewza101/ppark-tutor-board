@@ -31,6 +31,7 @@ const MiniBoard = ({ student, token }) => {
   const [renderError, setRenderError] = useState(null);
   const imageCacheRef = useRef({});
   const remotePaths = useRef({});
+  const remoteViewport = useRef(null);
 
   // Fetch initial board state
   useEffect(() => {

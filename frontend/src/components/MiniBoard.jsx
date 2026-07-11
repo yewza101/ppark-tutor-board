@@ -261,12 +261,12 @@ const MiniBoard = ({ student, token }) => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = remoteViewport.current ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 0, 0, 0.8)';
     ctx.font = '12px sans-serif';
-    ctx.fillText(remoteViewport.current ? 'SYNCED' : 'NOT SYNCED', 5, 15);
+    ctx.fillText(remoteViewport.current ? 'SYNCED' : 'NOT SYNCED', 10, 50);
     if (remoteViewport.current) {
-        ctx.fillText('P:' + remoteViewport.current.pan.x + ',' + remoteViewport.current.pan.y, 5, 25);
-        ctx.fillText('Z:' + remoteViewport.current.zoom, 5, 35);
-        ctx.fillText('S:' + remoteViewport.current.width + 'x' + remoteViewport.current.height, 5, 45);
-        ctx.fillText('E:' + elements.length, 5, 55);
+        ctx.fillText('P:' + remoteViewport.current.pan.x + ',' + remoteViewport.current.pan.y, 10, 65);
+        ctx.fillText('Z:' + remoteViewport.current.zoom, 10, 80);
+        ctx.fillText('S:' + remoteViewport.current.width + 'x' + remoteViewport.current.height, 10, 95);
+        ctx.fillText('E:' + elements.length, 10, 110);
     }
     ctx.restore();
 

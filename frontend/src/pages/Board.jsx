@@ -1850,13 +1850,18 @@ const Board = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-gray-100 overflow-hidden touch-none">
-      <div className="absolute top-4 left-4 z-10 flex gap-2">
+      <div 
+        className="absolute top-4 left-4 z-20 flex gap-2"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+      >
         {user?.role === 'admin' && (
           <button 
             onClick={() => navigate('/admin')}
-            className="flex items-center gap-2 px-4 py-2 bg-white shadow-md rounded-xl text-gray-700 hover:bg-gray-50 font-medium"
+            className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur shadow-lg border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
           >
-            <ArrowLeft size={20} /> Back to Dashboard
+            <ArrowLeft size={20} /> <span className="hidden sm:inline">Back to Dashboard</span>
           </button>
         )}
       </div>

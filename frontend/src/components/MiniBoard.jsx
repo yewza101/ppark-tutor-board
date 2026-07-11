@@ -381,7 +381,7 @@ const MiniBoard = ({ student, token }) => {
   return (
     <div 
       className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer flex flex-col h-64 relative group"
-      onClick={() => navigate(`/board/${student.id}`)}
+      onClick={() => navigate(`/board/${student.id}`, { state: { returnToGroup: student.group_name || 'General' } })}
     >
       {/* Header */}
       <div className="bg-gray-50 px-3 py-2 border-b border-gray-100 flex justify-between items-center z-10">

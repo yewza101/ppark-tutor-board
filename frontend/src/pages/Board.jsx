@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 import { ArrowLeft } from 'lucide-react';
@@ -166,6 +166,7 @@ const generateId = () => Date.now().toString(36) + Math.random().toString(36).su
 const Board = () => {
   const { studentId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, token } = useAuthStore();
   
   const canvasRef = useRef(null);
@@ -1857,12 +1858,22 @@ const Board = () => {
         onPointerUp={(e) => e.stopPropagation()}
       >
         {user?.role === 'admin' && (
-          <button 
-            onClick={() => navigate('/admin')}
-            className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur shadow-lg border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
-          >
-            <ArrowLeft size={20} /> <span className="hidden sm:inline">Back to Dashboard</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={(e) => { e.stopPropagation(); navigate('/admin'); }}
+              className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur shadow-lg border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
+            >
+              <ArrowLeft size={20} /> <span className="hidden sm:inline">Back to Dashboard</span>
+            </button>
+            {location.state?.returnToGroup && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); navigate(`/monitor/${encodeURIComponent(location.state.returnToGroup)}`); }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-50/90 backdrop-blur shadow-lg border border-blue-100 rounded-2xl text-blue-700 hover:bg-blue-100 font-medium transition-colors"
+              >
+                <ArrowLeft size={20} /> <span className="hidden sm:inline">Back to Monitor ({location.state.returnToGroup})</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
 

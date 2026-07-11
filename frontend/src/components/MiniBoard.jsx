@@ -109,7 +109,7 @@ const MiniBoard = ({ student, token }) => {
     };
   }, [student.id]);
 
-  const drawElement = useCallback((ctx, el) => {
+  const drawElement = useCallback((ctx, el, currentScale = 1.0) => {
     if (!el || !el.type) return;
     try {
       ctx.save();
@@ -122,7 +122,13 @@ const MiniBoard = ({ student, token }) => {
       
       ctx.strokeStyle = el.color || '#000000';
       ctx.fillStyle = el.color || '#000000';
-      ctx.lineWidth = el.size || 5;
+      let lw = el.size || 5;
+      // Ensure line is at least 1.5 physical pixels thick
+      const minPhysical = 1.5;
+      if (lw * currentScale < minPhysical) {
+        lw = minPhysical / currentScale;
+      }
+      ctx.lineWidth = lw;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
@@ -346,11 +352,22 @@ const MiniBoard = ({ student, token }) => {
         ctx.scale(scale, scale);
     }
 
-        elements.forEach(el => drawElement(ctx, el));
+        // Calculate the active scale for line width adjustment
+    let activeScale = 1.0;
+    if (remoteViewport.current) {
+        const { width, height, zoom } = remoteViewport.current;
+        const screenW = width || 1920;
+        const screenH = height || 1080;
+        activeScale = Math.min(cWidth / screenW, cHeight / screenH) * (zoom || 1);
+    } else {
+        activeScale = scale;
+    }
+
+    elements.forEach(el => drawElement(ctx, el, activeScale));
     
     // Draw in-progress strokes
     Object.values(remotePaths.current).forEach(path => {
-      if (path) drawElement(ctx, path);
+      if (path) drawElement(ctx, path, activeScale);
     });
     
     ctx.restore();

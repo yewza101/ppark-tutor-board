@@ -285,6 +285,14 @@ const Board = () => {
     setSocket(newSocket);
 
     newSocket.emit('join-board', studentId);
+    newSocket.emit('viewport-update', {
+      boardId: studentId,
+      pan: { x: 0, y: 0 },
+      zoom: 1,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      socketId: newSocket.id
+    });
 
     // We use a ref for redraw to avoid stale closures in socket listeners
     let isRedrawPending = false;

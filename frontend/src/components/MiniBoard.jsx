@@ -106,6 +106,11 @@ const MiniBoard = ({ student, token }) => {
       setElements(prev => prev.filter(el => el.id !== elementId));
     });
 
+    socket.on('viewport-update', (data) => {
+      remoteViewport.current = data;
+      setRedrawTrigger(prev => prev + 1);
+    });
+
     return () => {
       socket.disconnect();
     };

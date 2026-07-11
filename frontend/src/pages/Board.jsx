@@ -165,8 +165,10 @@ const generateId = () => Date.now().toString(36) + Math.random().toString(36).su
 
 const Board = () => {
   const { studentId } = useParams();
-  const navigate = useNavigate();
   const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const queryGroup = searchParams.get('group');
+  const returnGroup = location.state?.returnToGroup || queryGroup;
   const { user, token } = useAuthStore();
   
   const canvasRef = useRef(null);
@@ -1915,12 +1917,12 @@ const Board = () => {
             >
               <ArrowLeft size={20} /> <span className="hidden sm:inline">Back to Dashboard</span>
             </button>
-            {location.state?.returnToGroup && (
+            {returnGroup && (
               <button 
-                onClick={(e) => { e.stopPropagation(); navigate(`/monitor/${encodeURIComponent(location.state.returnToGroup)}`); }}
+                onClick={(e) => { e.stopPropagation(); navigate(`/monitor/${encodeURIComponent(returnGroup)}`); }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-50/90 backdrop-blur shadow-lg border border-blue-100 rounded-2xl text-blue-700 hover:bg-blue-100 font-medium transition-colors"
               >
-                <ArrowLeft size={20} /> <span className="hidden sm:inline">Back to Monitor ({location.state.returnToGroup})</span>
+                <ArrowLeft size={20} /> <span className="hidden sm:inline">Back to Monitor ({returnGroup})</span>
               </button>
             )}
           </div>

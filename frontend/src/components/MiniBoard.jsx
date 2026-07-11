@@ -278,23 +278,25 @@ const MiniBoard = ({ student, token }) => {
                     });
                 }
             } else if (el.type === 'line') {
-                let pX1 = el.x1 || 0;
-                let pX2 = el.x2 || 0;
-                let pY1 = el.y1 || 0;
-                let pY2 = el.y2 || 0;
+                let pX1 = Number(el.x1) || 0;
+                let pX2 = Number(el.x2) || 0;
+                let pY1 = Number(el.y1) || 0;
+                let pY2 = Number(el.y2) || 0;
                 minX = Math.min(minX, pX1, pX2);
                 maxX = Math.max(maxX, pX1, pX2);
                 minY = Math.min(minY, pY1, pY2);
                 maxY = Math.max(maxY, pY1, pY2);
             } else if (el.x !== undefined && el.y !== undefined) {
                 // rectangle, circle, image, text, postit
-                const w = el.w || 100;
-                const h = el.h || 100;
+                const x = Number(el.x) || 0;
+                const y = Number(el.y) || 0;
+                const w = Number(el.w) || 100;
+                const h = Number(el.h) || 100;
                 
-                let elMinX = Math.min(el.x, el.x + w);
-                let elMaxX = Math.max(el.x, el.x + w);
-                let elMinY = Math.min(el.y, el.y + h);
-                let elMaxY = Math.max(el.y, el.y + h);
+                let elMinX = Math.min(x, x + w);
+                let elMaxX = Math.max(x, x + w);
+                let elMinY = Math.min(y, y + h);
+                let elMaxY = Math.max(y, y + h);
                 
                 if (el.type === 'circle') {
                     const r = Math.sqrt((w*w) + (h*h));
@@ -349,25 +351,20 @@ const MiniBoard = ({ student, token }) => {
     ctx.restore();
   }, [elements, drawElement]);
 
-  const frameRef = useRef(null);
+  const redrawPending = useRef(false);
 
   const triggerRedraw = useCallback(() => {
-    if (!frameRef.current) {
-      frameRef.current = requestAnimationFrame(() => {
+    if (!redrawPending.current) {
+      redrawPending.current = true;
+      requestAnimationFrame(() => {
         redrawCanvas();
-        frameRef.current = null;
+        redrawPending.current = false;
       });
     }
   }, [redrawCanvas]);
 
   useEffect(() => {
     triggerRedraw();
-    return () => {
-      if (frameRef.current) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-    };
   }, [triggerRedraw, redrawTrigger, elements]);
 
   // Handle resizing of the thumbnail canvas

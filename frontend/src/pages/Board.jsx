@@ -1915,15 +1915,17 @@ const Board = () => {
             <button 
               onClick={(e) => { e.stopPropagation(); navigate('/admin'); }}
               className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur shadow-lg border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
+              title="Back to Dashboard"
             >
-              <ArrowLeft size={20} /> <span className="hidden sm:inline">Back to Dashboard</span>
+              <ArrowLeft size={20} /> <span className="hidden xl:inline">Back to Dashboard</span>
             </button>
             {returnGroup && (
               <button 
                 onClick={(e) => { e.stopPropagation(); navigate(`/monitor/${encodeURIComponent(returnGroup)}`); }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-50/90 backdrop-blur shadow-lg border border-blue-100 rounded-2xl text-blue-700 hover:bg-blue-100 font-medium transition-colors"
+                title={`Back to Monitor (${returnGroup})`}
               >
-                <ArrowLeft size={20} /> <span className="hidden sm:inline">Back to Monitor ({returnGroup})</span>
+                <ArrowLeft size={20} /> <span className="hidden xl:inline">Back to Monitor ({returnGroup})</span>
               </button>
             )}
           </div>

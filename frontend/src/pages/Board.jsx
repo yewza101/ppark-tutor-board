@@ -1186,7 +1186,7 @@ const Board = () => {
     if (isPanning) {
       const dx = e.clientX - startPoint.current.x;
       const dy = e.clientY - startPoint.current.y;
-      setPan({ x: pan.x + dx, y: pan.y + dy });
+      setPan(prevPan => ({ x: prevPan.x + dx, y: prevPan.y + dy }));
       startPoint.current = { x: e.clientX, y: e.clientY };
       return;
     }
@@ -1496,10 +1496,10 @@ const Board = () => {
       setPan({ x: newPanX, y: newPanY });
     } else {
       // Pan
-      setPan({
-        x: pan.x - e.deltaX,
-        y: pan.y - e.deltaY
-      });
+      setPan(prevPan => ({
+        x: prevPan.x - e.deltaX,
+        y: prevPan.y - e.deltaY
+      }));
     }
   };
 

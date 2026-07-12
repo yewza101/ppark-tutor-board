@@ -199,6 +199,7 @@ const Board = () => {
   
   // Tools state
   const [currentTool, setCurrentTool] = useState('pencil');
+  const [penMode, setPenMode] = useState(false);
   const [brushColor, setBrushColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(5);
   
@@ -860,8 +861,8 @@ const Board = () => {
     if (activePointerId.current !== null) return; // Ignore multitouch secondary fingers
     activePointerId.current = e.pointerId;
 
-    // Middle click or Space + Click for panning
-    if (e.button === 1 || e.altKey || currentTool === 'pan') {
+    // Middle click or Space + Click for panning, or Pen Mode with touch
+    if (e.button === 1 || e.altKey || currentTool === 'pan' || (penMode && e.pointerType === 'touch')) {
       setIsPanning(true);
       startPoint.current = { x: e.clientX, y: e.clientY };
       e.target.setPointerCapture(e.pointerId);
@@ -2083,6 +2084,7 @@ const Board = () => {
 
       <Toolbar 
         currentTool={currentTool} setCurrentTool={setCurrentTool}
+        penMode={penMode} setPenMode={setPenMode}
         brushColor={brushColor} setBrushColor={setBrushColor}
         brushSize={brushSize} setBrushSize={setBrushSize}
         handleZoomIn={handleZoomIn} handleZoomOut={handleZoomOut} handleResetZoom={handleResetZoom}

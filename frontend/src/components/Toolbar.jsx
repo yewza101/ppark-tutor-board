@@ -1,12 +1,13 @@
 import { 
   Pencil, Eraser, Circle, Square, Minus, 
   ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon,
-  Highlighter, Type, Download, Sigma, StickyNote, UploadCloud
+  Highlighter, Type, Download, Sigma, StickyNote, UploadCloud, PenTool
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 const Toolbar = ({ 
   currentTool, setCurrentTool, 
+  penMode, setPenMode,
   brushColor, setBrushColor, 
   brushSize, setBrushSize,
   handleZoomIn, handleZoomOut, handleResetZoom,
@@ -198,6 +199,16 @@ const Toolbar = ({
             title="Redo"
           >
             <Redo size={20} />
+          </button>
+          
+          <div className="w-px h-6 bg-gray-200 mx-1"></div>
+          
+          <button
+            onClick={() => setPenMode(!penMode)}
+            title={penMode ? "Pen Only Mode (ON)" : "Pen Only Mode (OFF)"}
+            className={`p-2 rounded-xl transition-colors ${penMode ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+          >
+            <PenTool size={20} />
           </button>
         </div>
       </div>

@@ -2531,16 +2531,6 @@ const Board = () => {
         )}
       </div>
 
-      <ScreenShare 
-        socket={socket} 
-        boardId={studentId} 
-        isScreenSharing={isScreenSharing} 
-        isLocalScreenShare={isLocalScreenShare}
-        onScreenShareToggle={(val) => {
-            setIsScreenSharing(val);
-            if (!val) setIsLocalScreenShare(false);
-        }}
-      />
 
       {/* PIP Window for Presentation Mode */}
       {showPIP && (

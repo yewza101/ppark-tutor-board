@@ -1,14 +1,20 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import Board from './pages/Board';
 import GroupMonitor from './pages/GroupMonitor';
 import GlobalVoiceWidget from './components/GlobalVoiceWidget';
 
+function VoiceWrapper() {
+  const location = useLocation();
+  if (location.search.includes('readonly=true')) return null;
+  return <GlobalVoiceWidget />;
+}
+
 function App() {
   return (
     <Router>
-      <GlobalVoiceWidget />
+      <VoiceWrapper />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/admin" element={<AdminDashboard />} />

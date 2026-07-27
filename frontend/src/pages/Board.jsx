@@ -326,13 +326,13 @@ const Board = () => {
     if (!socket || !user) return;
     const handleForcePresentation = (isActive) => {
       // Only students show the PIP (and admins who are not on the teacher_board maybe? Let's just do it for students)
-      if (user.role !== 'admin') {
+      if (user.role !== 'admin' && !isReadonly) {
         setShowPIP(isActive);
       }
     };
     socket.on('force-presentation', handleForcePresentation);
     return () => socket.off('force-presentation', handleForcePresentation);
-  }, [socket, user]);
+  }, [socket, user, isReadonly]);
 
   const [textInput, setTextInput] = useState(null);
   
@@ -2444,92 +2444,76 @@ const Board = () => {
   return (
     <div className="fixed inset-0 flex flex-col bg-gray-100 overflow-hidden touch-none">
       {!isReadonly && (
-        <div className="absolute top-4 left-4 z-50 flex items-center gap-4 bg-white/90 backdrop-blur px-4 py-2 rounded-2xl shadow-sm border border-gray-100">
-          <button 
-            onClick={() => returnGroup ? navigate(`/monitor/${returnGroup}`) : navigate('/admin')}
-            className="flex items-center gap-2 text-gray-600 hover:text-indigo-600 font-medium transition-colors"
-          >
-            <ArrowLeft size={20} />
-            {returnGroup ? `Back to Group ${returnGroup}` : 'Back to Dashboard'}
-          </button>
-          
-          <div className="h-6 w-px bg-gray-300"></div>
-          
-          <div className="font-bold text-gray-800 tracking-wide flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500"></span>
-            {studentId === 'teacher_board' ? "Teacher's Board" : `Board: ${studentId}`}
-          </div>
+        <div 
+          className="absolute top-4 left-4 z-50 flex flex-col md:flex-row gap-2 items-start"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+        >
+          {user?.role === 'admin' ? (
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={(e) => { e.stopPropagation(); navigate('/admin'); }}
+                className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur shadow-lg border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
+                title="Back to Dashboard"
+              >
+                <ArrowLeft size={20} /> <span className="hidden xl:inline">Back to Dashboard</span>
+              </button>
+              {returnGroup && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); navigate(`/monitor/${encodeURIComponent(returnGroup)}`); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-50/90 backdrop-blur shadow-lg border border-blue-100 rounded-2xl text-blue-700 hover:bg-blue-100 font-medium transition-colors"
+                  title={`Back to Monitor (${returnGroup})`}
+                >
+                  <ArrowLeft size={20} /> <span className="hidden xl:inline">Back to Monitor ({returnGroup})</span>
+                </button>
+              )}
+              <button
+                onClick={trackStudentCursor}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-50/90 backdrop-blur shadow-lg border border-indigo-100 rounded-2xl text-indigo-700 hover:bg-indigo-100 font-medium transition-colors"
+                title="Track Student"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+                <span className="hidden md:inline">Track Student</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if (studentId === 'teacher_board') {
+                    navigate(`/board/${user.username}`);
+                  } else {
+                    navigate('/board/teacher_board');
+                  }
+                }}
+                className={`flex items-center gap-2 px-4 py-2 backdrop-blur shadow-lg border rounded-2xl font-medium transition-colors ${
+                  studentId === 'teacher_board' 
+                    ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100' 
+                    : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
+                }`}
+                title={studentId === 'teacher_board' ? 'กลับไปบอร์ดของฉัน' : 'ไปที่บอร์ดของครู'}
+              >
+                <ArrowLeft size={20} className={studentId === 'teacher_board' ? '' : 'rotate-180'} />
+                <span className="hidden md:inline">
+                  {studentId === 'teacher_board' ? 'กลับกระดานส่วนตัว' : 'ไปที่บอร์ดของครู (Teacher Board)'}
+                </span>
+              </button>
+              {user?.username === studentId && (
+                <button
+                  onClick={handleClear}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-50/90 backdrop-blur shadow-lg border border-red-100 rounded-2xl text-red-700 hover:bg-red-100 font-medium transition-colors"
+                  title="Clear Board"
+                >
+                  <Trash2 size={20} />
+                  <span className="hidden md:inline">Clear Board</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
-      <div 
-        className="absolute top-4 left-4 z-20 flex flex-col md:flex-row gap-2 items-start"
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerMove={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-      >
-        {user?.role === 'admin' ? (
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={(e) => { e.stopPropagation(); navigate('/admin'); }}
-              className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur shadow-lg border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
-              title="Back to Dashboard"
-            >
-              <ArrowLeft size={20} /> <span className="hidden xl:inline">Back to Dashboard</span>
-            </button>
-            {returnGroup && (
-              <button 
-                onClick={(e) => { e.stopPropagation(); navigate(`/monitor/${encodeURIComponent(returnGroup)}`); }}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-50/90 backdrop-blur shadow-lg border border-blue-100 rounded-2xl text-blue-700 hover:bg-blue-100 font-medium transition-colors"
-                title={`Back to Monitor (${returnGroup})`}
-              >
-                <ArrowLeft size={20} /> <span className="hidden xl:inline">Back to Monitor ({returnGroup})</span>
-              </button>
-            )}
-            <button
-              onClick={trackStudentCursor}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-50/90 backdrop-blur shadow-lg border border-indigo-100 rounded-2xl text-indigo-700 hover:bg-indigo-100 font-medium transition-colors"
-              title="Track Student"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
-              <span className="hidden md:inline">Track Student</span>
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                if (studentId === 'teacher_board') {
-                  navigate(`/board/${user.id}`);
-                } else {
-                  navigate('/board/teacher_board');
-                }
-              }}
-              className={`flex items-center gap-2 px-4 py-2 backdrop-blur shadow-lg border rounded-2xl font-medium transition-colors ${
-                studentId === 'teacher_board' 
-                  ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100' 
-                  : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
-              }`}
-              title={studentId === 'teacher_board' ? 'กลับไปบอร์ดของฉัน' : 'ไปที่บอร์ดของครู'}
-            >
-              <ArrowLeft size={20} className={studentId === 'teacher_board' ? '' : 'rotate-180'} />
-              <span className="hidden md:inline">
-                {studentId === 'teacher_board' ? 'กลับกระดานส่วนตัว' : 'ไปที่บอร์ดของครู (Teacher Board)'}
-              </span>
-            </button>
-            {user?.username === studentId && (
-              <button
-                onClick={handleClear}
-                className="flex items-center gap-2 px-4 py-2 bg-red-50/90 backdrop-blur shadow-lg border border-red-100 rounded-2xl text-red-700 hover:bg-red-100 font-medium transition-colors"
-                title="Clear Board"
-              >
-                <Trash2 size={20} />
-                <span className="hidden md:inline">Clear Board</span>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
 
 
       {/* PIP Window for Presentation Mode */}

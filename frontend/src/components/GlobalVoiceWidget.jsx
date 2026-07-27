@@ -17,6 +17,7 @@ const GlobalVoiceWidget = () => {
 
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
+  const isReadonly = searchParams.get('readonly') === 'true';
   let currentGroup = searchParams.get('group');
   if (!currentGroup && location.pathname.startsWith('/monitor/')) {
     currentGroup = location.pathname.split('/monitor/')[1];
@@ -253,7 +254,7 @@ const GlobalVoiceWidget = () => {
     }
   };
 
-  if (!user) return null;
+  if (!user || isReadonly) return null;
 
   return (
     <>

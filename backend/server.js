@@ -25,7 +25,8 @@ const io = new Server(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"]
-  }
+  },
+  maxHttpBufferSize: 1e8 // 100 MB to prevent large boards from being dropped
 });
 
 app.use(cors());

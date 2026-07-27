@@ -538,6 +538,9 @@ const Board = () => {
             imageCacheRef.current[el.url] = img;
             if (fullRedrawRef.current) fullRedrawRef.current();
           };
+          img.onerror = () => {
+            imageCacheRef.current[el.url] = 'error';
+          };
           imageCacheRef.current[el.url] = 'loading';
         } else if (imageCacheRef.current[el.url] !== 'loading') {
           const img = imageCacheRef.current[el.url];
@@ -789,7 +792,7 @@ const Board = () => {
     fullRedraw();
     
     // Cleanup unused images from memory to prevent memory leaks
-    const currentUrls = new Set(elements.filter(el => el.type === 'image' && el.url).map(el => el.url));
+    const currentUrls = new Set(elements.filter(el => (el.type === 'image' || el.type === 'math') && el.url).map(el => el.url));
     Object.keys(imageCacheRef.current).forEach(url => {
         if (!currentUrls.has(url)) {
             delete imageCacheRef.current[url];
@@ -1110,7 +1113,7 @@ const Board = () => {
   };
 
   const checkObjectEraserCollision = (pos) => {
-    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && isPointInElement(pos, el, brushSize));
+    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && el.type !== 'image' && isPointInElement(pos, el, brushSize));
     if (elIdx !== -1) {
       const deletedEl = elementsRef.current[elIdx];
       if (deletedEl.id) {

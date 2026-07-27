@@ -7,6 +7,35 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, isLocalScreenShare, onS
   const peerConnectionsRef = useRef({});
   const user = useAuthStore(state => state.user);
   
+  // Draggable state
+  const [position, setPosition] = useState({ x: 16, y: 80 });
+  const [isMinimized, setIsMinimized] = useState(false);
+  const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+
+  const onDragStart = (e) => {
+    dragRef.current.isDragging = true;
+    dragRef.current.startX = e.clientX;
+    dragRef.current.startY = e.clientY;
+    dragRef.current.origX = position.x;
+    dragRef.current.origY = position.y;
+    e.target.setPointerCapture(e.pointerId);
+  };
+
+  const onDragMove = (e) => {
+    if (!dragRef.current.isDragging) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    setPosition({
+      x: dragRef.current.origX + dx,
+      y: dragRef.current.origY + dy
+    });
+  };
+
+  const onDragEnd = (e) => {
+    dragRef.current.isDragging = false;
+    e.target.releasePointerCapture(e.pointerId);
+  };
+  
   // We need to keep track of active sockets in the room so we can send offers
   // The simplest way is to rely on 'user-joined-voice' or just broadcast
   // But WebRTC requires targeted offers. We'll use the existing voice socket connections
@@ -196,13 +225,27 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, isLocalScreenShare, onS
   const videoRef = useRef(null);
 
   useEffect(() => {
-    if (videoRef.current && stream && videoRef.current.srcObject !== stream) {
-      videoRef.current.srcObject = stream;
+    if (videoRef.current && stream) {
+      if (videoRef.current.srcObject !== stream) {
+        videoRef.current.srcObject = stream;
+      }
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+          playPromise.catch(err => {
+             // Auto-play was prevented or already playing, ignore
+          });
+      }
     }
-  }, [stream]);
+  });
 
   const toggleFullscreen = () => {
     if (!videoRef.current) return;
+    
+    // Fallback for iOS Safari which doesn't support generic Fullscreen API
+    if (videoRef.current.webkitEnterFullscreen) {
+      videoRef.current.webkitEnterFullscreen();
+      return;
+    }
     
     if (!document.fullscreenElement) {
       videoRef.current.requestFullscreen().catch(err => {
@@ -222,29 +265,60 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, isLocalScreenShare, onS
   }
 
   return (
-    <div className="absolute top-20 left-4 z-40 bg-gray-900 rounded-lg shadow-2xl overflow-hidden border border-gray-700 resize overflow-auto flex flex-col" style={{ width: '400px', height: '250px', minWidth: '200px', minHeight: '150px' }}>
-      <div className="bg-gray-800 text-white text-xs p-2 font-bold cursor-move flex justify-between items-center shrink-0">
+    <div 
+      className="absolute z-40 bg-gray-900 rounded-lg shadow-2xl overflow-hidden border border-gray-700 resize flex flex-col" 
+      style={{ 
+        left: position.x, 
+        top: position.y, 
+        width: isMinimized ? '200px' : '400px', 
+        height: isMinimized ? 'auto' : '250px', 
+        minWidth: '200px', 
+        minHeight: isMinimized ? 'auto' : '150px' 
+      }}
+    >
+      <div 
+        className="bg-gray-800 text-white text-xs p-2 font-bold cursor-move flex justify-between items-center shrink-0 touch-none"
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
+      >
         <span>Admin Screen Share</span>
-        <button 
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setIsMinimized(!isMinimized)}
+            className="text-gray-300 hover:text-white px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
+            title={isMinimized ? "Expand" : "Minimize"}
+          >
+            {isMinimized ? '+' : '-'}
+          </button>
+          {!isMinimized && (
+            <button 
           onClick={toggleFullscreen}
           className="text-gray-300 hover:text-white px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
           title="Full Screen"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-          </svg>
-        </button>
+              onClick={toggleFullscreen}
+              className="text-gray-300 hover:text-white px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
+              title="Full Screen"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
-      <div className="flex-1 w-full bg-black relative">
-        <video
-          autoPlay
-          playsInline
-          ref={videoRef}
-          onClick={toggleFullscreen}
-          className="absolute inset-0 w-full h-full object-contain cursor-pointer"
-          title="Click to view Fullscreen"
-        />
-      </div>
+      {!isMinimized && (
+        <div className="flex-1 w-full bg-black relative">
+          <video
+            autoPlay
+            playsInline
+            ref={videoRef}
+            onClick={toggleFullscreen}
+            className="absolute inset-0 w-full h-full object-contain cursor-pointer"
+          />
+        </div>
+      )}
     </div>
   );
 };

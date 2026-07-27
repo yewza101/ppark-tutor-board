@@ -91,7 +91,7 @@ const isPointInElement = (pt, el, radius) => {
     }
     return false;
   } else if (el.type === 'line') {
-    return distancePointToSegment(pt, {x: el.x, y: el.y}, {x: el.x1, y: el.y1}) < hitRadius;
+    return distancePointToSegment(pt, {x: el.x1, y: el.y1}, {x: el.x2, y: el.y2}) < hitRadius;
   } else if (el.type === 'rectangle') {
     const v1 = {x: el.x, y: el.y};
     const v2 = {x: el.x + el.w, y: el.y};
@@ -145,10 +145,10 @@ const getElementBoundingBox = (el) => {
      maxX = Math.max(...validPoints.map(p => p.x));
      maxY = Math.max(...validPoints.map(p => p.y));
   } else if (el.type === 'line') {
-     minX = Math.min(el.x, el.x1);
-     minY = Math.min(el.y, el.y1);
-     maxX = Math.max(el.x, el.x1);
-     maxY = Math.max(el.y, el.y1);
+     minX = Math.min(el.x1, el.x2);
+     minY = Math.min(el.y1, el.y2);
+     maxX = Math.max(el.x1, el.x2);
+     maxY = Math.max(el.y1, el.y2);
   } else if (el.type === 'circle') {
      const r = Math.sqrt(Math.pow(el.w, 2) + Math.pow(el.h, 2));
      minX = el.x - r; minY = el.y - r; maxX = el.x + r; maxY = el.y + r;
@@ -2016,7 +2016,8 @@ const Board = () => {
 
   const trackStudentCursor = () => {
     // Find the cursor belonging to the student whose board this is
-    const studentCursor = Object.values(cursors).find(c => c.username === studentId);
+    const targetUsername = decodeURIComponent(studentId);
+    const studentCursor = Object.values(cursors).find(c => c.username === targetUsername);
     if (studentCursor && containerRef.current) {
         const viewportWidth = containerRef.current.clientWidth;
         const viewportHeight = containerRef.current.clientHeight;
@@ -2025,6 +2026,8 @@ const Board = () => {
             x: viewportWidth / 2 - studentCursor.x * zoom,
             y: viewportHeight / 2 - studentCursor.y * zoom
         });
+    } else {
+        alert('ยังหาเมาส์ของนักเรียนไม่เจอครับ (นักเรียนอาจจะยังไม่ได้ขยับเมาส์ในตอนนี้)');
     }
   };
 
@@ -2149,7 +2152,7 @@ const Board = () => {
   return (
     <div className="fixed inset-0 flex flex-col bg-gray-100 overflow-hidden touch-none">
       <div 
-        className="absolute top-4 left-4 z-20 flex gap-2"
+        className="absolute top-4 left-4 z-20 flex flex-col md:flex-row gap-2 items-start"
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}

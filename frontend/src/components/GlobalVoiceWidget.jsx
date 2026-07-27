@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import useAuthStore from '../store/useAuthStore';
 import { API_URL } from '../config';
+import { useLocation } from 'react-router-dom';
 
 const GlobalVoiceWidget = () => {
   const user = useAuthStore(state => state.user);
@@ -13,6 +14,15 @@ const GlobalVoiceWidget = () => {
   const [showParticipants, setShowParticipants] = useState(false);
   const [widgetPos, setWidgetPos] = useState({ x: typeof window !== 'undefined' ? window.innerWidth - 70 : 300, y: 80 });
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  let currentGroup = searchParams.get('group');
+  if (!currentGroup && location.pathname.startsWith('/monitor/')) {
+    currentGroup = location.pathname.split('/monitor/')[1];
+  }
+  const voiceRoomId = currentGroup ? `voice_group_${currentGroup}` : 'voice_global';
+  const activeVoiceRoomIdRef = useRef(voiceRoomId);
 
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({});
@@ -32,9 +42,32 @@ const GlobalVoiceWidget = () => {
     if (!user) return;
     const newSocket = io(API_URL);
     setSocket(newSocket);
-    newSocket.emit('join-board', { boardId: 'voice_global', role: user.role });
+    // Initial join
+    newSocket.emit('join-board', { boardId: voiceRoomId, role: user.role });
     return () => newSocket.disconnect();
   }, [user]);
+
+  // Handle room changes dynamically
+  useEffect(() => {
+    if (!socket || !user) return;
+    
+    if (activeVoiceRoomIdRef.current !== voiceRoomId) {
+      if (isVoiceEnabled) {
+         socket.emit('leave-voice', { boardId: activeVoiceRoomIdRef.current });
+      }
+      socket.emit('join-board', { boardId: voiceRoomId, role: user.role });
+      
+      // Clear peers from old room
+      setPeers({});
+      Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+      peerConnectionsRef.current = {};
+      
+      if (isVoiceEnabled && localStreamRef.current) {
+         socket.emit('join-voice', { boardId: voiceRoomId, username: user?.username || 'Unknown' });
+      }
+      activeVoiceRoomIdRef.current = voiceRoomId;
+    }
+  }, [voiceRoomId, socket, isVoiceEnabled, user]);
 
   useEffect(() => {
     if (!socket || !isVoiceEnabled) return;
@@ -43,8 +76,8 @@ const GlobalVoiceWidget = () => {
         track.enabled = !isMuted;
       });
     }
-    socket.emit('mic-status-changed', { boardId: 'voice_global', isMuted });
-  }, [isMuted, socket, isVoiceEnabled]);
+    socket.emit('mic-status-changed', { boardId: voiceRoomId, isMuted });
+  }, [isMuted, socket, isVoiceEnabled, voiceRoomId]);
 
   useEffect(() => {
     if (!socket || !isVoiceEnabled) {
@@ -57,7 +90,7 @@ const GlobalVoiceWidget = () => {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         localStreamRef.current = stream;
         stream.getAudioTracks().forEach(track => track.enabled = !isMuted);
-        socket.emit('join-voice', { boardId: 'voice_global', username: user?.username || 'Unknown' });
+        socket.emit('join-voice', { boardId: voiceRoomId, username: user?.username || 'Unknown' });
       } catch (err) {
         console.error("Microphone access denied:", err);
         alert("Cannot access microphone. Please check permissions.");
@@ -210,7 +243,7 @@ const GlobalVoiceWidget = () => {
     peerConnectionsRef.current = {};
     setPeers({});
     if (socket && isVoiceEnabled) {
-       socket.emit('leave-voice', { boardId: 'voice_global' });
+      socket.emit('leave-voice', { boardId: activeVoiceRoomIdRef.current });
     }
   };
 

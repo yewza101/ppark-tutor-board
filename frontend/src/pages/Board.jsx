@@ -2174,7 +2174,11 @@ const Board = () => {
         socket={socket} 
         boardId={studentId} 
         isScreenSharing={isScreenSharing} 
-        onScreenShareToggle={setIsScreenSharing} 
+        isLocalScreenShare={isLocalScreenShare}
+        onScreenShareToggle={(val) => {
+            setIsScreenSharing(val);
+            if (!val) setIsLocalScreenShare(false);
+        }}
       />
 
       {/* Admin Participants Modal */}

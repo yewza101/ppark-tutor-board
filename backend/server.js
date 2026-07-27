@@ -65,9 +65,14 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   res.json({ url: publicUrlData.publicUrl });
 });
 
+let isGlobalPresentationActive = false;
+
 // Socket.io for Real-time Drawing
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
+  
+  // Send the global presentation state to newly connected clients
+  socket.emit('force-presentation', isGlobalPresentationActive);
 
   socket.on('join-board', (data) => {
     let boardId, role;
@@ -158,6 +163,11 @@ io.on('connection', (socket) => {
   socket.on('cursor-move', (data) => {
     // data = { boardId, username, x, y, color }
     socket.to(`board_${data.boardId}`).emit('cursor-move', { ...data, socketId: socket.id });
+  });
+
+  socket.on('force-presentation', (isActive) => {
+    isGlobalPresentationActive = isActive;
+    socket.broadcast.emit('force-presentation', isActive);
   });
 
   // --- WebRTC Voice Chat Signaling ---

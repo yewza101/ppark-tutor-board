@@ -2,12 +2,13 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import Board from './pages/Board';
-
 import GroupMonitor from './pages/GroupMonitor';
+import GlobalVoiceWidget from './components/GlobalVoiceWidget';
 
 function App() {
   return (
     <Router>
+      <GlobalVoiceWidget />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/admin" element={<AdminDashboard />} />

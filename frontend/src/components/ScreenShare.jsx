@@ -59,7 +59,7 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, isLocalScreenShare, onS
     async function startScreenShare() {
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-          alert('ขออภัยครับ อุปกรณ์นี้ (เช่น iPad/iPhone) ไม่รองรับการแชร์หน้าจอผ่านเว็บบราวเซอร์ครับ (เป็นข้อจำกัดของระบบปฏิบัติการ)');
+          alert('ขออภัยครับ อุปกรณ์มือถือและแท็บเล็ต (เช่น iPad, Android, Huawei) ส่วนใหญ่ไม่รองรับการแชร์หน้าจอผ่านเว็บบราวเซอร์ครับ (เป็นข้อจำกัดของระบบปฏิบัติการมือถือ)');
           onScreenShareToggle(false);
           return;
         }
@@ -75,6 +75,7 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, isLocalScreenShare, onS
         socket.emit('screen-started', { boardId, username: user.username });
       } catch (err) {
         console.error("Screen share access denied:", err);
+        alert('ไม่สามารถแชร์หน้าจอได้: ' + (err.message || 'อุปกรณ์หรือบราวเซอร์ของคุณบล็อกการแชร์หน้าจอ'));
         onScreenShareToggle(false);
       }
     }

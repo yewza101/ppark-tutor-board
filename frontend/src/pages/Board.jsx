@@ -5,8 +5,6 @@ import axios from 'axios';
 import { ArrowLeft, Trash2 } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import Toolbar from '../components/Toolbar';
-import VoiceChat from '../components/VoiceChat';
-import ScreenShare from '../components/ScreenShare';
 import { API_URL } from '../config';
 import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -191,6 +189,7 @@ const Board = () => {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const queryGroup = searchParams.get('group');
+  const isReadonly = searchParams.get('readonly') === 'true';
   const returnGroup = location.state?.returnToGroup || queryGroup;
   const { user, token } = useAuthStore();
   
@@ -206,12 +205,6 @@ const Board = () => {
   
   // Tools state
   const [currentTool, setCurrentTool] = useState('pencil');
-  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [voicePeers, setVoicePeers] = useState({});
-  const [showParticipants, setShowParticipants] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isLocalScreenShare, setIsLocalScreenShare] = useState(false);
   const [penMode, setPenMode] = useState(false);
   const [brushColor, setBrushColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(5);
@@ -319,6 +312,28 @@ const Board = () => {
     }, 2000);
     return () => clearInterval(interval);
   }, [socket, pan, zoom, viewportSize, studentId, isPresentationMode]);
+
+  // Emit force-presentation when admin toggles it on the teacher_board
+  useEffect(() => {
+    if (socket && user?.role === 'admin' && studentId === 'teacher_board') {
+      socket.emit('force-presentation', isPresentationMode);
+    }
+  }, [socket, user, studentId, isPresentationMode]);
+
+  // Listen for global force-presentation to show PIP
+  const [showPIP, setShowPIP] = useState(false);
+  useEffect(() => {
+    if (!socket || !user) return;
+    const handleForcePresentation = (isActive) => {
+      // Only students show the PIP (and admins who are not on the teacher_board maybe? Let's just do it for students)
+      if (user.role !== 'admin') {
+        setShowPIP(isActive);
+      }
+    };
+    socket.on('force-presentation', handleForcePresentation);
+    return () => socket.off('force-presentation', handleForcePresentation);
+  }, [socket, user]);
+
   const [textInput, setTextInput] = useState(null);
   
   // Collaborative state
@@ -327,19 +342,6 @@ const Board = () => {
   const [selectedElementIds, setSelectedElementIds] = useState([]);
   const activeLassoPathRef = useRef(null);
   
-  const [voiceWidgetPos, setVoiceWidgetPos] = useState({ x: typeof window !== 'undefined' ? window.innerWidth - 70 : 300, y: 80 });
-  const voiceDragRef = useRef({ isDragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
-
-  useEffect(() => {
-    const handleResize = () => {
-      setVoiceWidgetPos(prev => ({
-        x: Math.min(prev.x, window.innerWidth - 70),
-        y: Math.min(prev.y, window.innerHeight - 200)
-      }));
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
   const dragContext = useRef(null);
   
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -1377,6 +1379,8 @@ const Board = () => {
             y: (pts[0].y + pts[1].y) / 2
         };
         
+        if (isReadonly) return;
+        
         if (lastPinchDist.current && lastPinchCenter.current) {
             const zoomDelta = currentDist / lastPinchDist.current;
             
@@ -2228,6 +2232,7 @@ const Board = () => {
   };
 
   const handleUndo = () => {
+    if (isReadonly) return;
     if (pastStates.length === 0) return;
     const previous = pastStates[pastStates.length - 1];
     const newPast = pastStates.slice(0, -1);
@@ -2238,6 +2243,7 @@ const Board = () => {
   };
 
   const handleRedo = () => {
+    if (isReadonly) return;
     if (futureStates.length === 0) return;
     const next = futureStates[0];
     const newFuture = futureStates.slice(1);
@@ -2248,6 +2254,7 @@ const Board = () => {
   };
 
   const handleClear = () => {
+    if (isReadonly) return;
     if (confirm('Are you sure you want to clear the canvas?')) {
       setPastStates([...pastStates, elements]);
       setFutureStates([]);
@@ -2297,7 +2304,7 @@ const Board = () => {
         }
     }
     
-    // 5. Last resort: Just pick any remote cursor available
+    // 5. Last resort: Find any remote cursor available
     if (!studentCursor && Object.values(cursors).length > 0) {
         studentCursor = Object.values(cursors)[0];
     }
@@ -2436,6 +2443,24 @@ const Board = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-gray-100 overflow-hidden touch-none">
+      {!isReadonly && (
+        <div className="absolute top-4 left-4 z-50 flex items-center gap-4 bg-white/90 backdrop-blur px-4 py-2 rounded-2xl shadow-sm border border-gray-100">
+          <button 
+            onClick={() => returnGroup ? navigate(`/monitor/${returnGroup}`) : navigate('/admin')}
+            className="flex items-center gap-2 text-gray-600 hover:text-indigo-600 font-medium transition-colors"
+          >
+            <ArrowLeft size={20} />
+            {returnGroup ? `Back to Group ${returnGroup}` : 'Back to Dashboard'}
+          </button>
+          
+          <div className="h-6 w-px bg-gray-300"></div>
+          
+          <div className="font-bold text-gray-800 tracking-wide flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-green-500"></span>
+            {studentId === 'teacher_board' ? "Teacher's Board" : `Board: ${studentId}`}
+          </div>
+        </div>
+      )}
       <div 
         className="absolute top-4 left-4 z-20 flex flex-col md:flex-row gap-2 items-start"
         onPointerDown={(e) => e.stopPropagation()}
@@ -2506,16 +2531,6 @@ const Board = () => {
         )}
       </div>
 
-      <VoiceChat 
-        socket={socket} 
-        boardId={studentId} 
-        isVoiceEnabled={isVoiceEnabled} 
-        onVoiceToggle={setIsVoiceEnabled}
-        isMuted={isMuted}
-        setIsMuted={setIsMuted}
-        onPeersUpdate={setVoicePeers}
-      />
-
       <ScreenShare 
         socket={socket} 
         boardId={studentId} 
@@ -2527,161 +2542,47 @@ const Board = () => {
         }}
       />
 
-      {/* Admin Participants Modal */}
-      {showParticipants && user?.role === 'admin' && (
-        <div className="absolute top-20 right-20 w-72 bg-white rounded-xl shadow-2xl overflow-hidden z-50 border border-gray-100">
-          <div className="bg-indigo-600 text-white p-4 font-bold flex justify-between items-center">
-            <span>Participants ({Object.keys(voicePeers).length + (isVoiceEnabled ? 1 : 0)})</span>
-            <button onClick={() => setShowParticipants(false)} className="hover:text-indigo-200">
+      {/* PIP Window for Presentation Mode */}
+      {showPIP && (
+        <div 
+          className="fixed bottom-6 right-6 w-96 h-64 bg-white rounded-xl shadow-2xl border-4 border-indigo-500 overflow-hidden z-[9999]"
+          style={{ resize: 'both' }}
+        >
+          <div className="bg-indigo-600 text-white font-bold px-3 py-2 flex justify-between items-center text-sm shadow-md">
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+              Live: Teacher's Screen
+            </span>
+            <button onClick={() => setShowPIP(false)} className="hover:text-red-200">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
               </svg>
             </button>
           </div>
-          <div className="max-h-64 overflow-y-auto p-2">
-            {isVoiceEnabled && (
-              <div className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
-                <span className="font-medium text-gray-800">{user?.username} (You)</span>
-                <span className={isMuted ? 'text-red-500 text-xs font-bold' : 'text-green-500 text-xs font-bold'}>
-                  {isMuted ? 'Muted' : 'Speaking'}
-                </span>
-              </div>
-            )}
-            {Object.entries(voicePeers).map(([socketId, peer]) => (
-              <div key={socketId} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
-                <span className="font-medium text-gray-800">{peer.username}</span>
-                <div className="flex items-center gap-2">
-                  <span className={peer.isMuted ? 'text-red-500 text-xs font-bold' : 'text-green-500 text-xs font-bold'}>
-                    {peer.isMuted ? 'Muted' : 'Live'}
-                  </span>
-                  <button 
-                    onClick={() => socket.emit('admin-mute-user', { targetSocketId: socketId })}
-                    className="p-1 text-red-500 hover:bg-red-50 rounded"
-                    title="Force Mute"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            ))}
-            {Object.keys(voicePeers).length === 0 && !isVoiceEnabled && (
-              <div className="text-center text-gray-500 p-4">No one is in Voice Chat</div>
-            )}
-          </div>
+          <iframe 
+            src="/board/teacher_board?readonly=true" 
+            className="w-full h-full border-none pointer-events-none" 
+            title="Teacher Board PIP"
+          />
         </div>
       )}
 
-      {/* Voice Controls Widget */}
-      <div 
-        className="absolute z-50 flex flex-col items-center gap-3 bg-white/90 backdrop-blur p-2 rounded-2xl shadow-xl border border-gray-200 cursor-move"
-        style={{ left: `${voiceWidgetPos.x}px`, top: `${voiceWidgetPos.y}px`, touchAction: 'none' }}
-        onPointerDown={(e) => {
-            voiceDragRef.current = { isDragging: true, startX: e.clientX, startY: e.clientY, origX: voiceWidgetPos.x, origY: voiceWidgetPos.y };
-            e.target.setPointerCapture(e.pointerId);
-        }}
-        onPointerMove={(e) => {
-            if (voiceDragRef.current.isDragging) {
-                setVoiceWidgetPos({
-                    x: voiceDragRef.current.origX + (e.clientX - voiceDragRef.current.startX),
-                    y: voiceDragRef.current.origY + (e.clientY - voiceDragRef.current.startY)
-                });
-            }
-        }}
-        onPointerUp={(e) => {
-            voiceDragRef.current.isDragging = false;
-            e.target.releasePointerCapture(e.pointerId);
-        }}
-      >
-        <div className="w-6 h-1.5 bg-gray-300 rounded-full mb-1 pointer-events-none"></div>
-        {user?.role === 'admin' && (
-          <>
-            <button
-              onClick={() => {
-                if (!isScreenSharing) {
-                  setIsScreenSharing(true);
-                  setIsLocalScreenShare(true);
-                } else {
-                  setIsScreenSharing(false);
-                  setIsLocalScreenShare(false);
-                }
-              }}
-              className={`flex items-center justify-center w-10 h-10 rounded-full transition-all ${isScreenSharing ? 'bg-blue-500 hover:bg-blue-600 text-white animate-pulse' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-              title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M2 6a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setShowParticipants(!showParticipants)}
-              className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-all"
-              title="Participants List"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-              </svg>
-            </button>
-          </>
-        )}
-
-        {!isVoiceEnabled ? (
-          <button
-            onClick={() => setIsVoiceEnabled(true)}
-            className="flex items-center justify-center px-4 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-all"
-            title="Join Voice Chat"
-          >
-            Join Voice
-          </button>
-        ) : (
-          <>
-            <button
-              onClick={() => setIsMuted(!isMuted)}
-              className={`flex items-center justify-center w-12 h-12 rounded-full shadow-md transition-all ${!isMuted ? 'bg-green-500 hover:bg-green-600 text-white animate-pulse' : 'bg-yellow-500 hover:bg-yellow-600 text-white'}`}
-              title={isMuted ? 'Unmute' : 'Mute'}
-            >
-              {!isMuted ? (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                </svg>
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setIsVoiceEnabled(false);
-                setIsMuted(false);
-              }}
-              className="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-md transition-all"
-              title="Leave Voice"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </>
-        )}
-      </div>
-
-      <Toolbar 
-        currentTool={currentTool} setCurrentTool={setCurrentTool}
-        penMode={penMode} setPenMode={setPenMode}
-        brushColor={brushColor} setBrushColor={setBrushColor}
-        brushSize={brushSize} setBrushSize={setBrushSize}
-        handleZoomIn={handleZoomIn} handleZoomOut={handleZoomOut} handleResetZoom={handleResetZoom}
-        handleClear={handleClear} handleUndo={handleUndo} handleRedo={handleRedo}
-        canUndo={pastStates.length > 0} canRedo={futureStates.length > 0}
-        handleUpload={handleUpload}
-        bgTemplate={bgTemplate} setBgTemplate={setBgTemplate}
-        handleExport={handleExport}
-        isPresentationMode={isPresentationMode} setIsPresentationMode={setIsPresentationMode}
-        isAdmin={user?.role === 'admin'}
-      />
+      {!isReadonly && (
+        <Toolbar 
+          currentTool={currentTool} setCurrentTool={setCurrentTool}
+          penMode={penMode} setPenMode={setPenMode}
+          brushColor={brushColor} setBrushColor={setBrushColor}
+          brushSize={brushSize} setBrushSize={setBrushSize}
+          handleZoomIn={handleZoomIn} handleZoomOut={handleZoomOut} handleResetZoom={handleResetZoom}
+          handleClear={handleClear} handleUndo={handleUndo} handleRedo={handleRedo}
+          canUndo={pastStates.length > 0} canRedo={futureStates.length > 0}
+          handleUpload={handleUpload}
+          bgTemplate={bgTemplate} setBgTemplate={setBgTemplate}
+          handleExport={handleExport}
+          isPresentationMode={isPresentationMode} setIsPresentationMode={setIsPresentationMode}
+          isAdmin={user?.role === 'admin'}
+        />
+      )}
 
       <div 
         ref={containerRef} 

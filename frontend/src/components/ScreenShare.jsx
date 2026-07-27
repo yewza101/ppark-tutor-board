@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import useAuthStore from '../store/useAuthStore';
 
-const ScreenShare = ({ socket, boardId, isScreenSharing, onScreenShareToggle }) => {
+const ScreenShare = ({ socket, boardId, isScreenSharing, isLocalScreenShare, onScreenShareToggle }) => {
   const [remoteStreams, setRemoteStreams] = useState({});
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({});
@@ -15,8 +15,14 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, onScreenShareToggle }) 
   useEffect(() => {
     if (!socket) return;
 
-    if (isScreenSharing && user?.role === 'admin') {
+    if (isScreenSharing && isLocalScreenShare) {
       startScreenShare();
+    } else if (isScreenSharing && !isLocalScreenShare) {
+      // Students wait for the stream or request it
+      // ONLY request if we don't have peer connections already setup
+      if (Object.keys(peerConnectionsRef.current).length === 0) {
+        socket.emit('request-screen', { boardId });
+      }
     } else {
       stopScreenShare();
     }
@@ -47,7 +53,7 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, onScreenShareToggle }) 
       peerConnectionsRef.current = {};
       setRemoteStreams({});
       
-      if (user?.role === 'admin') {
+      if (isLocalScreenShare) {
         socket.emit('screen-stopped', { boardId });
       }
     }
@@ -134,7 +140,7 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, onScreenShareToggle }) 
         socket.off('screen-stopped', handleScreenStopped);
       }
     };
-  }, [socket, isScreenSharing, boardId, user, onScreenShareToggle]);
+  }, [socket, isScreenSharing, boardId, isLocalScreenShare]); // Removed onScreenShareToggle to prevent infinite re-renders
 
   const createPeerConnection = (targetSocketId) => {
     const pc = new RTCPeerConnection({
@@ -185,14 +191,6 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, onScreenShareToggle }) 
     return pc;
   };
 
-  // Render logic
-  // For Admin: we don't render anything here, we just broadcast.
-  // For Students: we render the received video stream.
-  
-  if (user?.role === 'admin' || Object.keys(remoteStreams).length === 0) {
-    return null;
-  }
-
   // Find the first available remote stream (Admin's screen)
   const stream = Object.values(remoteStreams)[0];
   const videoRef = useRef(null);
@@ -214,6 +212,14 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, onScreenShareToggle }) 
       document.exitFullscreen();
     }
   };
+
+  // Render logic
+  // For Admin: we don't render anything here, we just broadcast.
+  // For Students: we render the received video stream.
+  
+  if (isLocalScreenShare || Object.keys(remoteStreams).length === 0) {
+    return null;
+  }
 
   return (
     <div className="absolute top-20 left-4 z-40 bg-gray-900 rounded-lg shadow-2xl overflow-hidden border border-gray-700 resize overflow-auto flex flex-col" style={{ width: '400px', height: '250px', minWidth: '200px', minHeight: '150px' }}>

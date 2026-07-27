@@ -206,6 +206,7 @@ const Board = () => {
   const [voicePeers, setVoicePeers] = useState({});
   const [showParticipants, setShowParticipants] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isLocalScreenShare, setIsLocalScreenShare] = useState(false);
   const [penMode, setPenMode] = useState(false);
   const [brushColor, setBrushColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(5);

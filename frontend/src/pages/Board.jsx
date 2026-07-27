@@ -702,6 +702,7 @@ const Board = () => {
     const docPages = elementsRef.current.filter(el => el.isPage);
     const isDocumentMode = docPages.length > 0;
 
+    ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = isDocumentMode ? '#d1d5db' : '#ffffff'; // Grey background if in document mode
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -764,6 +765,7 @@ const Board = () => {
     }
 
     elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, zoom));
+    ctx.restore();
   }, [zoom, pan, bgTemplate, drawElement]);
 
   const redrawDraft = useCallback(() => {
@@ -771,6 +773,7 @@ const Board = () => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     
+    ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height); // Transparent!
     ctx.translate(pan.x, pan.y);
@@ -901,6 +904,7 @@ const Board = () => {
         }
       }
     }
+    ctx.restore();
   }, [zoom, pan, selectedElementIds, drawElement]);
 
   const startLaserFadeAnimation = useCallback(() => {

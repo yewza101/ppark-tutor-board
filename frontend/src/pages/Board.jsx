@@ -1400,6 +1400,8 @@ const Board = () => {
     }
     if (currentTool === 'eraser') {
       erasePixel(pos);
+      // Also try to erase objects (shapes/text) if we hit them
+      checkObjectEraserCollision(pos);
       return;
     }
 
@@ -2178,14 +2180,17 @@ const Board = () => {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
               <span className="hidden md:inline">Track Student</span>
             </button>
-            <button
-              onClick={handleClear}
-              className="flex items-center gap-2 px-4 py-2 bg-red-50/90 backdrop-blur shadow-lg border border-red-100 rounded-2xl text-red-700 hover:bg-red-100 font-medium transition-colors"
-              title="Clear Board"
-            >
-              <Trash2 size={20} />
-              <span className="hidden md:inline">Clear Board</span>
-            </button>
+
+            {(user?.role === 'admin' || user?.username === studentId) && (
+              <button
+                onClick={handleClear}
+                className="flex items-center gap-2 px-4 py-2 bg-red-50/90 backdrop-blur shadow-lg border border-red-100 rounded-2xl text-red-700 hover:bg-red-100 font-medium transition-colors"
+                title="Clear Board"
+              >
+                <Trash2 size={20} />
+                <span className="hidden md:inline">Clear Board</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -2213,7 +2218,7 @@ const Board = () => {
 
       {/* Admin Participants Modal */}
       {showParticipants && user?.role === 'admin' && (
-        <div className="absolute bottom-20 right-4 w-72 bg-white rounded-xl shadow-2xl overflow-hidden z-50 border border-gray-100">
+        <div className="absolute top-20 right-20 w-72 bg-white rounded-xl shadow-2xl overflow-hidden z-50 border border-gray-100">
           <div className="bg-indigo-600 text-white p-4 font-bold flex justify-between items-center">
             <span>Participants ({Object.keys(voicePeers).length + (isVoiceEnabled ? 1 : 0)})</span>
             <button onClick={() => setShowParticipants(false)} className="hover:text-indigo-200">
@@ -2258,7 +2263,7 @@ const Board = () => {
       )}
 
       {/* Voice Controls Widget */}
-      <div className="absolute bottom-4 right-4 z-50 flex items-center gap-3 bg-white p-2 rounded-full shadow-xl border border-gray-200">
+      <div className="absolute top-20 right-4 z-50 flex flex-col items-center gap-3 bg-white/90 backdrop-blur p-2 rounded-2xl shadow-xl border border-gray-200">
         {user?.role === 'admin' && (
           <>
             <button

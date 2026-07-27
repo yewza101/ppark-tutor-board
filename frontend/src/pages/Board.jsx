@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Trash2 } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import Toolbar from '../components/Toolbar';
 import VoiceChat from '../components/VoiceChat';

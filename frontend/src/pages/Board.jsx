@@ -821,6 +821,14 @@ const Board = () => {
             let hasFading = false;
             
             fadingLasersRef.current = fadingLasersRef.current.filter(laser => {
+                const isAnyLaserDrawing = 
+                    (isDrawing.current && currentTool === 'laser') || 
+                    Object.values(remotePaths.current).some(path => path && path.tool === 'laser');
+                
+                if (isAnyLaserDrawing) {
+                    laser.fadeStartTime = now;
+                }
+                
                 const elapsed = now - laser.fadeStartTime;
                 if (elapsed < 3000) {
                     hasFading = true;

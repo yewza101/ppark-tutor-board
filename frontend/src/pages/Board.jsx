@@ -2017,7 +2017,20 @@ const Board = () => {
   const trackStudentCursor = () => {
     // Find the cursor belonging to the student whose board this is
     const targetUsername = decodeURIComponent(studentId);
-    const studentCursor = Object.values(cursors).find(c => c.username === targetUsername);
+    
+    // 1. Try exact or case-insensitive match
+    let studentCursor = Object.values(cursors).find(c => c.username && c.username.toLowerCase() === targetUsername.toLowerCase());
+    
+    // 2. Fallback: Find the first cursor that is a student (blue color)
+    if (!studentCursor) {
+        studentCursor = Object.values(cursors).find(c => c.color === '#3b82f6');
+    }
+    
+    // 3. Last resort: Just pick any remote cursor available
+    if (!studentCursor && Object.values(cursors).length > 0) {
+        studentCursor = Object.values(cursors)[0];
+    }
+
     if (studentCursor && containerRef.current) {
         const viewportWidth = containerRef.current.clientWidth;
         const viewportHeight = containerRef.current.clientHeight;

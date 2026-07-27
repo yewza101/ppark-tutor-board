@@ -1068,6 +1068,8 @@ const Board = () => {
                 gMinX, gMinY, gMaxX, gMaxY,
                 origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
             };
+            startPoint.current = { x: e.clientX, y: e.clientY };
+            isDrawing.current = true;
             e.target.setPointerCapture(e.pointerId);
             return;
         }
@@ -2340,7 +2342,7 @@ const Board = () => {
               <span className="hidden md:inline">Track Student</span>
             </button>
 
-            {(user?.role === 'admin' || user?.username === studentId) && (
+            {user?.role !== 'admin' && user?.username === studentId && (
               <button
                 onClick={handleClear}
                 className="flex items-center gap-2 px-4 py-2 bg-red-50/90 backdrop-blur shadow-lg border border-red-100 rounded-2xl text-red-700 hover:bg-red-100 font-medium transition-colors"

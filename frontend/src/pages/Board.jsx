@@ -276,6 +276,20 @@ const Board = () => {
   const imageCacheRef = useRef({});
   const [selectedElementIds, setSelectedElementIds] = useState([]);
   const activeLassoPathRef = useRef(null);
+  
+  const [voiceWidgetPos, setVoiceWidgetPos] = useState({ x: typeof window !== 'undefined' ? window.innerWidth - 70 : 300, y: 80 });
+  const voiceDragRef = useRef({ isDragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setVoiceWidgetPos(prev => ({
+        x: Math.min(prev.x, window.innerWidth - 70),
+        y: Math.min(prev.y, window.innerHeight - 200)
+      }));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const dragContext = useRef(null);
   
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -1525,7 +1539,7 @@ const Board = () => {
     
     // Request animation frame for smooth redraw
     requestAnimationFrame(() => { 
-        if (dragContext.current && (dragContext.current.type === 'move' || dragContext.current.type === 'rotate' || dragContext.current.type === 'scale')) {
+        if (dragContext.current && (dragContext.current.type === 'move' || dragContext.current.type === 'rotate' || dragContext.current.type === 'rotateGroup' || dragContext.current.type === 'scale')) {
             if (fullRedrawRef.current) fullRedrawRef.current();
         } else {
             if (redrawDraftRef.current) redrawDraftRef.current(); 
@@ -2132,7 +2146,30 @@ const Board = () => {
         studentCursor = Object.values(cursors).find(c => c.color === '#3b82f6');
     }
     
-    // 3. Last resort: Just pick any remote cursor available
+    // 3. Fallback: Try to find an active remote path from a student
+    if (!studentCursor) {
+        const pathIds = Object.keys(remotePaths.current);
+        if (pathIds.length > 0) {
+            const path = remotePaths.current[pathIds[0]];
+            if (path && path.points && path.points.length > 0) {
+                const lastPoint = path.points[path.points.length - 1];
+                if (lastPoint) {
+                    studentCursor = { x: lastPoint.x, y: lastPoint.y };
+                }
+            }
+        }
+    }
+    
+    // 4. Fallback: Find the most recent element on the board
+    if (!studentCursor && elementsRef.current.length > 0) {
+        const lastEl = elementsRef.current[elementsRef.current.length - 1];
+        const box = getElementBoundingBox(lastEl);
+        if (box && box.minX !== undefined) {
+            studentCursor = { x: (box.minX + box.maxX)/2, y: (box.minY + box.maxY)/2 };
+        }
+    }
+    
+    // 5. Last resort: Just pick any remote cursor available
     if (!studentCursor && Object.values(cursors).length > 0) {
         studentCursor = Object.values(cursors)[0];
     }
@@ -2385,7 +2422,27 @@ const Board = () => {
       )}
 
       {/* Voice Controls Widget */}
-      <div className="absolute top-20 right-4 z-50 flex flex-col items-center gap-3 bg-white/90 backdrop-blur p-2 rounded-2xl shadow-xl border border-gray-200">
+      <div 
+        className="absolute z-50 flex flex-col items-center gap-3 bg-white/90 backdrop-blur p-2 rounded-2xl shadow-xl border border-gray-200 cursor-move"
+        style={{ left: `${voiceWidgetPos.x}px`, top: `${voiceWidgetPos.y}px`, touchAction: 'none' }}
+        onPointerDown={(e) => {
+            voiceDragRef.current = { isDragging: true, startX: e.clientX, startY: e.clientY, origX: voiceWidgetPos.x, origY: voiceWidgetPos.y };
+            e.target.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+            if (voiceDragRef.current.isDragging) {
+                setVoiceWidgetPos({
+                    x: voiceDragRef.current.origX + (e.clientX - voiceDragRef.current.startX),
+                    y: voiceDragRef.current.origY + (e.clientY - voiceDragRef.current.startY)
+                });
+            }
+        }}
+        onPointerUp={(e) => {
+            voiceDragRef.current.isDragging = false;
+            e.target.releasePointerCapture(e.pointerId);
+        }}
+      >
+        <div className="w-6 h-1.5 bg-gray-300 rounded-full mb-1 pointer-events-none"></div>
         {user?.role === 'admin' && (
           <>
             <button

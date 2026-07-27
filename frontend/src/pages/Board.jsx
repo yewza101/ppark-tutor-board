@@ -1884,9 +1884,13 @@ const Board = () => {
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
                 const ctx = canvas.getContext('2d');
+                await page.render({ canvasContext: ctx, viewport }).promise;
+                
+                // Fill white background behind the rendered PDF to prevent transparency issues
+                ctx.globalCompositeOperation = 'destination-over';
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                await page.render({ canvasContext: ctx, viewport }).promise;
+                ctx.globalCompositeOperation = 'source-over';
                 
                 const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
                 const uploadFile = new File([blob], `${file.name}_page${i}.png`, { type: 'image/png' });

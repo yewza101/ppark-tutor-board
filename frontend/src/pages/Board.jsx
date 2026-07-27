@@ -1248,11 +1248,12 @@ const Board = () => {
       // Throttle cursor emit slightly in a real app, but raw is fine for local
       socket.emit('cursor-move', {
         boardId: studentId,
-        username: user.username,
+        username: user?.username || 'Unknown',
         x: pos.x,
         y: pos.y,
-        color: user.role === 'admin' ? '#ef4444' : '#3b82f6'
+        color: user?.role === 'admin' ? '#ef4444' : '#3b82f6'
       });
+      lastEmitTime.current = now;
     }
 
     if (activePointerId.current !== e.pointerId) return; // Ignore other pointers

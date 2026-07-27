@@ -239,18 +239,30 @@ const Board = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Broadcast viewport changes
+  // Broadcast viewport changes with throttle/debounce to prevent network flooding
+  const lastViewportEmitRef = useRef(0);
   useEffect(() => {
     if (socket && socket.connected) {
-      socket.emit('viewport-update', {
-        boardId: studentId,
-        pan,
-        zoom,
-        width: viewportSize.w,
-        height: viewportSize.h,
-        socketId: socket.id,
-        isPresentationMode
-      });
+      const emitViewport = () => {
+        lastViewportEmitRef.current = Date.now();
+        socket.emit('viewport-update', {
+          boardId: studentId,
+          pan,
+          zoom,
+          width: viewportSize.w,
+          height: viewportSize.h,
+          socketId: socket.id,
+          isPresentationMode
+        });
+      };
+
+      const now = Date.now();
+      if (now - lastViewportEmitRef.current > 50) {
+        emitViewport();
+      } else {
+        const handler = setTimeout(emitViewport, 50);
+        return () => clearTimeout(handler);
+      }
     }
   }, [socket, pan, zoom, viewportSize, studentId, isPresentationMode]);
 
@@ -431,8 +443,10 @@ const Board = () => {
     newSocket.on('clear-canvas', () => {
       setElements(prev => {
         setPastStates(p => [...p, prev]);
+        elementsRef.current = [];
         return [];
       });
+      if (fullRedrawRef.current) fullRedrawRef.current();
     });
 
     newSocket.on('update-element', (data) => {
@@ -2202,6 +2216,8 @@ const Board = () => {
       setPastStates([...pastStates, elements]);
       setFutureStates([]);
       setElements([]);
+      elementsRef.current = [];
+      if (fullRedrawRef.current) fullRedrawRef.current();
       if (socket) socket.emit('clear-canvas', studentId);
     }
   };

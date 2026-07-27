@@ -138,12 +138,17 @@ const isPointInPolygon = (point, vs) => {
 const getElementBoundingBox = (el) => {
   let minX, minY, maxX, maxY;
   if (el.type === 'path') {
-     const validPoints = el.points ? el.points.filter(p => p !== null) : [];
-     if (validPoints.length === 0) return {};
-     minX = Math.min(...validPoints.map(p => p.x));
-     minY = Math.min(...validPoints.map(p => p.y));
-     maxX = Math.max(...validPoints.map(p => p.x));
-     maxY = Math.max(...validPoints.map(p => p.y));
+     if (el.bbox) {
+         minX = el.bbox.minX; minY = el.bbox.minY; maxX = el.bbox.maxX; maxY = el.bbox.maxY;
+     } else {
+         const validPoints = el.points ? el.points.filter(p => p !== null) : [];
+         if (validPoints.length === 0) return {};
+         minX = Math.min(...validPoints.map(p => p.x));
+         minY = Math.min(...validPoints.map(p => p.y));
+         maxX = Math.max(...validPoints.map(p => p.x));
+         maxY = Math.max(...validPoints.map(p => p.y));
+         el.bbox = { minX, minY, maxX, maxY };
+     }
   } else if (el.type === 'line') {
      minX = Math.min(el.x1, el.x2);
      minY = Math.min(el.y1, el.y2);
@@ -293,6 +298,7 @@ const Board = () => {
   
   const remotePaths = useRef({});
   const lastEmitTime = useRef(0);
+  const lastEraserPos = useRef(null);
 
   // Initialize Socket and Fetch initial data
   useEffect(() => {
@@ -1093,6 +1099,7 @@ const Board = () => {
     if (currentTool === 'eraser') {
       const pos = getMousePos(e);
       erasePixel(pos);
+      lastEraserPos.current = pos;
       isDrawing.current = true;
       e.target.setPointerCapture(e.pointerId);
       return;
@@ -1146,7 +1153,7 @@ const Board = () => {
         }
         
         let pathMutated = false;
-        const eraserRadius = brushSize / 2;
+        const eraserRadius = (brushSize / 2) + (el.size ? el.size / 2 : 2.5);
         
         for (let i = 0; i < el.points.length; i++) {
            if (el.points[i] === null) continue;
@@ -1400,9 +1407,22 @@ const Board = () => {
       return;
     }
     if (currentTool === 'eraser') {
-      erasePixel(pos);
-      // Also try to erase objects (shapes/text) if we hit them
-      checkObjectEraserCollision(pos);
+      if (lastEraserPos.current) {
+          const dist = Math.hypot(pos.x - lastEraserPos.current.x, pos.y - lastEraserPos.current.y);
+          const steps = Math.max(1, Math.ceil(dist / (brushSize / 4)));
+          for (let i = 1; i <= steps; i++) {
+             const interpPos = {
+                 x: lastEraserPos.current.x + (pos.x - lastEraserPos.current.x) * (i / steps),
+                 y: lastEraserPos.current.y + (pos.y - lastEraserPos.current.y) * (i / steps)
+             };
+             erasePixel(interpPos);
+             checkObjectEraserCollision(interpPos);
+          }
+      } else {
+          erasePixel(pos);
+          checkObjectEraserCollision(pos);
+      }
+      lastEraserPos.current = pos;
       return;
     }
 
@@ -1447,6 +1467,7 @@ const Board = () => {
     
     if (activePointerId.current !== e.pointerId) return;
     activePointerId.current = null;
+    lastEraserPos.current = null;
     
     e.target.releasePointerCapture(e.pointerId);
     if (isPanning) {

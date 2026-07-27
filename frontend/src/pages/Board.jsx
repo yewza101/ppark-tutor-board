@@ -783,10 +783,14 @@ const Board = () => {
             ctx.lineTo(activeLassoPathRef.current[0].x, activeLassoPathRef.current[0].y);
             ctx.stroke();
             ctx.setLineDash([]);
-        } else if (selectedElementIds.length === 1) {
+        }
+        
+        let isSpecialSingle = false;
+        if (selectedElementIds.length === 1) {
             ctx.setLineDash([]);
             const el = elementsRef.current.find(e => e.id === selectedElementIds[0]);
             if (el && (el.type === 'image' || el.type === 'math' || el.type === 'rectangle')) {
+                isSpecialSingle = true;
                 const cx = el.x + el.w / 2;
                 const cy = el.y + el.h / 2;
                 ctx.save();
@@ -816,14 +820,10 @@ const Board = () => {
                 ctx.stroke();
                 
                 ctx.restore();
-            } else {
-                ctx.strokeRect(gMinX - pad, gMinY - pad, gMaxX - gMinX + pad*2, gMaxY - gMinY + pad*2);
-                ctx.fillStyle = '#ffffff';
-                const hs = 12 / zoom;
-                ctx.fillRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
-                ctx.strokeRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
             }
-        } else {
+        }
+        
+        if (!isSpecialSingle && selectedElementIds.length > 0) {
             ctx.strokeRect(gMinX - pad, gMinY - pad, gMaxX - gMinX + pad*2, gMaxY - gMinY + pad*2);
             ctx.setLineDash([]);
             ctx.fillStyle = '#ffffff';
@@ -1340,111 +1340,124 @@ const Board = () => {
         const dx = pos.x - dragContext.current.startX;
         const dy = pos.y - dragContext.current.startY;
         
-        dragContext.current.origElements.forEach(origEl => {
-          if (!origEl) return;
-          const elIdx = elementsRef.current.findIndex(e => e.id === origEl.id);
-          if (elIdx === -1) return;
-          const el = elementsRef.current[elIdx];
-          
-          if (dragContext.current.type === 'rotate') {
-            const dx = pos.x - dragContext.current.cx;
-            const dy = pos.y - dragContext.current.cy;
-            // Calculate angle, adjust by Math.PI/2 because rotate handle is at the top (which is -y)
-            // Math.atan2(dy, dx) returns angle from positive x-axis. Top is -PI/2.
-            let angle = Math.atan2(dy, dx) + Math.PI/2;
+        const isGroupOperation = dragContext.current.type === 'rotateGroup' || dragContext.current.type === 'scaleGroup';
+        
+        if (dragContext.current.type === 'rotateGroup') {
+            dragContext.current.isMoved = true;
+            const currentAngle = Math.atan2(pos.y - dragContext.current.cy, pos.x - dragContext.current.cx);
+            let angleDelta = currentAngle - dragContext.current.startAngle;
             
-            // Apply snapping to common angles if Shift is held
             if (e.shiftKey) {
                 const snapAngle = Math.PI / 12; // 15 degrees
-                angle = Math.round(angle / snapAngle) * snapAngle;
+                angleDelta = Math.round(angleDelta / snapAngle) * snapAngle;
             }
             
             elementsRef.current.forEach(el => {
                 if (selectedElementIds.includes(el.id)) {
-                    el.rotation = angle;
+                    const origEl = dragContext.current.origElements.find(e => e.id === el.id);
+                    if (!origEl) return;
+                    
+                    if (el.type === 'path') {
+                        el.points = origEl.points.map(p => {
+                            if (p === null) return null;
+                            return rotatePoint(p.x, p.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                        });
+                        el.bbox = null;
+                        el.path2d = null;
+                    } else if (el.type === 'line') {
+                        const p1 = rotatePoint(origEl.x1, origEl.y1, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                        const p2 = rotatePoint(origEl.x2, origEl.y2, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                        el.x1 = p1.x; el.y1 = p1.y;
+                        el.x2 = p2.x; el.y2 = p2.y;
+                    } else if (el.type === 'circle') {
+                        const newCenter = rotatePoint(origEl.x, origEl.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                        el.x = newCenter.x;
+                        el.y = newCenter.y;
+                    } else {
+                        const origCX = origEl.x + (origEl.w || 0)/2;
+                        const origCY = origEl.y + (origEl.h || 0)/2;
+                        const newCenter = rotatePoint(origCX, origCY, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                        el.x = newCenter.x - (origEl.w || 0)/2;
+                        el.y = newCenter.y - (origEl.h || 0)/2;
+                        el.rotation = (origEl.rotation || 0) + angleDelta;
+                    }
                 }
             });
-          } else if (dragContext.current.type === 'move') {
-            if (el.type === 'path') {
-               el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { x: origEl.points[i].x + dx, y: origEl.points[i].y + dy }));
-               el.path2d = null;
-            } else {
-               el.x = origEl.x + dx;
-               el.y = origEl.y + dy;
-               if (el.type === 'line') {
-                 el.x1 = origEl.x1 + dx;
-                 el.y1 = origEl.y1 + dy;
-               }
+            if (socket && socket.id && shouldEmit) {
+              elementsRef.current.forEach(el => {
+                  if (selectedElementIds.includes(el.id)) {
+                      socket.emit('update-element', { boardId: studentId, element: el });
+                  }
+              });
             }
-          } else if (dragContext.current.type === 'rotateGroup') {
-              dragContext.current.isMoved = true;
-              const currentAngle = Math.atan2(pos.y - dragContext.current.cy, pos.x - dragContext.current.cx);
-              let angleDelta = currentAngle - dragContext.current.startAngle;
+        } else {
+          dragContext.current.origElements.forEach(origEl => {
+            if (!origEl) return;
+            const elIdx = elementsRef.current.findIndex(e => e.id === origEl.id);
+            if (elIdx === -1) return;
+            const el = elementsRef.current[elIdx];
+            
+            if (dragContext.current.type === 'rotate') {
+              const dx = pos.x - dragContext.current.cx;
+              const dy = pos.y - dragContext.current.cy;
+              // Calculate angle, adjust by Math.PI/2 because rotate handle is at the top (which is -y)
+              // Math.atan2(dy, dx) returns angle from positive x-axis. Top is -PI/2.
+              let angle = Math.atan2(dy, dx) + Math.PI/2;
               
+              // Apply snapping to common angles if Shift is held
               if (e.shiftKey) {
                   const snapAngle = Math.PI / 12; // 15 degrees
-                  angleDelta = Math.round(angleDelta / snapAngle) * snapAngle;
+                  angle = Math.round(angle / snapAngle) * snapAngle;
               }
               
               elementsRef.current.forEach(el => {
                   if (selectedElementIds.includes(el.id)) {
-                      const origEl = dragContext.current.origElements.find(e => e.id === el.id);
-                      if (!origEl) return;
-                      
-                      if (el.type === 'path') {
-                          el.points = origEl.points.map(p => {
-                              if (p === null) return null;
-                              return rotatePoint(p.x, p.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                          });
-                          el.bbox = null;
-                          el.path2d = null;
-                      } else if (el.type === 'line') {
-                          const p1 = rotatePoint(origEl.x1, origEl.y1, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                          const p2 = rotatePoint(origEl.x2, origEl.y2, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                          el.x1 = p1.x; el.y1 = p1.y;
-                          el.x2 = p2.x; el.y2 = p2.y;
-                      } else if (el.type === 'circle') {
-                          const newCenter = rotatePoint(origEl.x, origEl.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                          el.x = newCenter.x;
-                          el.y = newCenter.y;
-                      } else {
-                          const origCX = origEl.x + (origEl.w || 0)/2;
-                          const origCY = origEl.y + (origEl.h || 0)/2;
-                          const newCenter = rotatePoint(origCX, origCY, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                          el.x = newCenter.x - (origEl.w || 0)/2;
-                          el.y = newCenter.y - (origEl.h || 0)/2;
-                          el.rotation = (origEl.rotation || 0) + angleDelta;
-                      }
+                      el.rotation = angle;
                   }
               });
-          } else if (dragContext.current.type === 'scale') {
-             const origW = dragContext.current.gMaxX - dragContext.current.gMinX;
-             const newW = Math.max(20, origW + dx);
-             const scale = origW === 0 ? 1 : newW / origW;
-             
-             if (el.type === 'path') {
-               el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { 
-                 x: dragContext.current.gMinX + (origEl.points[i].x - dragContext.current.gMinX) * scale, 
-                 y: dragContext.current.gMinY + (origEl.points[i].y - dragContext.current.gMinY) * scale 
-               }));
-               el.size = origEl.size * scale;
-               el.path2d = null;
-             } else {
-               el.x = dragContext.current.gMinX + (origEl.x - dragContext.current.gMinX) * scale;
-               el.y = dragContext.current.gMinY + (origEl.y - dragContext.current.gMinY) * scale;
-               if (el.type === 'line') {
-                 el.x1 = dragContext.current.gMinX + (origEl.x1 - dragContext.current.gMinX) * scale;
-                 el.y1 = dragContext.current.gMinY + (origEl.y1 - dragContext.current.gMinY) * scale;
+            } else if (dragContext.current.type === 'move') {
+              if (el.type === 'path') {
+                 el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { x: origEl.points[i].x + dx, y: origEl.points[i].y + dy }));
+                 el.bbox = null;
+                 el.path2d = null;
+              } else {
+                 el.x = origEl.x + dx;
+                 el.y = origEl.y + dy;
+                 if (el.type === 'line') {
+                   el.x1 = origEl.x1 + dx;
+                   el.y1 = origEl.y1 + dy;
+                 }
+              }
+            } else if (dragContext.current.type === 'scale') {
+               const origW = dragContext.current.gMaxX - dragContext.current.gMinX;
+               const newW = Math.max(20, origW + dx);
+               const scale = origW === 0 ? 1 : newW / origW;
+               
+               if (el.type === 'path') {
+                 el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { 
+                   x: dragContext.current.gMinX + (origEl.points[i].x - dragContext.current.gMinX) * scale, 
+                   y: dragContext.current.gMinY + (origEl.points[i].y - dragContext.current.gMinY) * scale 
+                 }));
+                 el.size = origEl.size * scale;
+                 el.bbox = null;
+                 el.path2d = null;
+               } else {
+                 el.x = dragContext.current.gMinX + (origEl.x - dragContext.current.gMinX) * scale;
+                 el.y = dragContext.current.gMinY + (origEl.y - dragContext.current.gMinY) * scale;
+                 if (el.type === 'line') {
+                   el.x1 = dragContext.current.gMinX + (origEl.x1 - dragContext.current.gMinX) * scale;
+                   el.y1 = dragContext.current.gMinY + (origEl.y1 - dragContext.current.gMinY) * scale;
+                 }
+                 if (el.w !== undefined) el.w = origEl.w * scale;
+                 if (el.h !== undefined) el.h = origEl.h * scale;
+                 if (el.size !== undefined) el.size = origEl.size * scale;
                }
-               if (el.w !== undefined) el.w = origEl.w * scale;
-               if (el.h !== undefined) el.h = origEl.h * scale;
-               if (el.size !== undefined) el.size = origEl.size * scale;
-             }
-          }
-          if (socket && socket.id && shouldEmit) {
-            socket.emit('update-element', { boardId: studentId, element: el });
-          }
-        });
+            }
+            if (socket && socket.id && shouldEmit) {
+              socket.emit('update-element', { boardId: studentId, element: el });
+            }
+          });
+        }
         
         if (dragContext.current.origLassoPath) {
             if (dragContext.current.type === 'rotateGroup') {

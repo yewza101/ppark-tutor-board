@@ -587,22 +587,34 @@ const Board = () => {
         ctx.arc(el.x || 0, el.y || 0, r, 0, 2 * Math.PI);
         ctx.stroke();
       } else if (el.type === 'image' || el.type === 'math') {
-        if (!imageCacheRef.current[el.url]) {
-          const img = new Image();
-          img.crossOrigin = 'Anonymous';
-          img.src = el.url;
-          img.onload = () => {
-            imageCacheRef.current[el.url] = img;
-            if (fullRedrawRef.current) fullRedrawRef.current();
-          };
-          img.onerror = () => {
-            imageCacheRef.current[el.url] = 'error';
-          };
-          imageCacheRef.current[el.url] = 'loading';
-        } else if (imageCacheRef.current[el.url] !== 'loading') {
-          const img = imageCacheRef.current[el.url];
-          ctx.drawImage(img, el.x || 0, el.y || 0, el.w || 100, el.h || 100);
-        }
+          if (!imageCacheRef.current[el.url]) {
+            const img = new Image();
+            img.crossOrigin = 'Anonymous';
+            img.src = el.url;
+            img.onload = () => {
+              imageCacheRef.current[el.url] = img;
+              if (fullRedrawRef.current) fullRedrawRef.current();
+            };
+            img.onerror = () => {
+              imageCacheRef.current[el.url] = 'error';
+            };
+            imageCacheRef.current[el.url] = 'loading';
+          } else if (imageCacheRef.current[el.url] !== 'loading') {
+            const img = imageCacheRef.current[el.url];
+            if (el.type === 'image') {
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+              ctx.shadowBlur = 15;
+              ctx.shadowOffsetX = 0;
+              ctx.shadowOffsetY = 4;
+            }
+            ctx.drawImage(img, el.x || 0, el.y || 0, el.w || 100, el.h || 100);
+            if (el.type === 'image') {
+              ctx.shadowColor = 'transparent';
+              ctx.shadowBlur = 0;
+              ctx.shadowOffsetX = 0;
+              ctx.shadowOffsetY = 0;
+            }
+          }
       } else if (el.type === 'text') {
         ctx.font = `${el.size || 20}px sans-serif`;
         ctx.fillStyle = el.color || '#000000';

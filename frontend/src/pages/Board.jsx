@@ -2284,7 +2284,15 @@ const Board = () => {
         {user?.role === 'admin' && (
           <>
             <button
-              onClick={() => setIsScreenSharing(!isScreenSharing)}
+              onClick={() => {
+                if (!isScreenSharing) {
+                  setIsScreenSharing(true);
+                  setIsLocalScreenShare(true);
+                } else {
+                  setIsScreenSharing(false);
+                  setIsLocalScreenShare(false);
+                }
+              }}
               className={`flex items-center justify-center w-10 h-10 rounded-full transition-all ${isScreenSharing ? 'bg-blue-500 hover:bg-blue-600 text-white animate-pulse' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
               title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
             >

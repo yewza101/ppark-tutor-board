@@ -58,6 +58,12 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, isLocalScreenShare, onS
 
     async function startScreenShare() {
       try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+          alert('ขออภัยครับ อุปกรณ์นี้ (เช่น iPad/iPhone) ไม่รองรับการแชร์หน้าจอผ่านเว็บบราวเซอร์ครับ (เป็นข้อจำกัดของระบบปฏิบัติการ)');
+          onScreenShareToggle(false);
+          return;
+        }
+        
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         localStreamRef.current = stream;
         

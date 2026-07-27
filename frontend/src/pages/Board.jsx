@@ -1184,7 +1184,7 @@ const Board = () => {
   };
 
   const checkObjectEraserCollision = (pos) => {
-    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && el.type !== 'image' && isPointInElement(pos, el, brushSize));
+    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && el.type !== 'image' && el.type !== 'path' && isPointInElement(pos, el, brushSize));
     if (elIdx !== -1) {
       const deletedEl = elementsRef.current[elIdx];
       if (deletedEl.id) {

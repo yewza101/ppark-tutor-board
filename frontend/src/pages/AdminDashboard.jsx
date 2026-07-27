@@ -109,7 +109,15 @@ const AdminDashboard = () => {
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans w-full">
       <header className="bg-white shadow-sm sticky top-0 z-10 w-full">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+            <button
+              onClick={() => navigate('/board/teacher_board')}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-sm font-medium"
+            >
+              เข้าบอร์ดของครู (Teacher Board)
+            </button>
+          </div>
           <button 
             onClick={handleLogout}
             className="flex items-center gap-2 text-gray-600 hover:text-red-600 transition-colors px-3 py-2 rounded-lg hover:bg-red-50"

@@ -1,7 +1,7 @@
 import { 
   Pencil, Eraser, Circle, Square, Minus, 
   ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon,
-  Highlighter, Type, Download, Sigma, StickyNote, UploadCloud, PenTool
+  Highlighter, Type, Download, Sigma, StickyNote, UploadCloud, PenTool, MonitorPlay
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 
@@ -13,7 +13,8 @@ const Toolbar = ({
   handleZoomIn, handleZoomOut, handleResetZoom,
   handleClear, handleUndo, handleRedo,
   canUndo, canRedo, handleUpload,
-  bgTemplate, setBgTemplate, handleExport
+  bgTemplate, setBgTemplate, handleExport,
+  isPresentationMode, setIsPresentationMode, isAdmin
 }) => {
   const fileInputRef = useRef(null);
   const [presetSizes, setPresetSizes] = useState([2, 5, 12]);
@@ -248,6 +249,25 @@ const Toolbar = ({
             }} 
             className="hidden" 
           />
+
+          {isAdmin && (
+            <div className="w-10 h-px bg-gray-200 my-1 mx-auto" />
+          )}
+          
+          {isAdmin && (
+            <button
+              onClick={() => setIsPresentationMode(!isPresentationMode)}
+              title={isPresentationMode ? "ปิดโหมดนำเสนอ (Stop Presentation)" : "เปิดโหมดนำเสนอ (Start Presentation)"}
+              className={`p-2 rounded-xl transition-colors relative ${isPresentationMode ? 'bg-indigo-100 text-indigo-600' : 'text-gray-700 hover:bg-gray-100'}`}
+            >
+              <MonitorPlay size={20} />
+              {isPresentationMode && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+              )}
+            </button>
+          )}
+
+          <div className="w-10 h-px bg-gray-200 my-1 mx-auto" />
 
           <select 
               value={bgTemplate} 

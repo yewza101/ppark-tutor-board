@@ -228,6 +228,7 @@ const Board = () => {
   const [isPanning, setIsPanning] = useState(false);
   const [bgTemplate, setBgTemplate] = useState('blank');
   const [viewportSize, setViewportSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  const [isPresentationMode, setIsPresentationMode] = useState(false);
 
   // Keep track of window size
   useEffect(() => {
@@ -247,10 +248,11 @@ const Board = () => {
         zoom,
         width: viewportSize.w,
         height: viewportSize.h,
-        socketId: socket.id
+        socketId: socket.id,
+        isPresentationMode
       });
     }
-  }, [socket, pan, zoom, viewportSize, studentId]);
+  }, [socket, pan, zoom, viewportSize, studentId, isPresentationMode]);
 
   // Heartbeat to sync viewport for newly joined admins
   useEffect(() => {
@@ -263,12 +265,13 @@ const Board = () => {
           zoom,
           width: viewportSize.w,
           height: viewportSize.h,
-          socketId: socket.id
+          socketId: socket.id,
+          isPresentationMode
         });
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [socket, pan, zoom, viewportSize, studentId]);
+  }, [socket, pan, zoom, viewportSize, studentId, isPresentationMode]);
   const [textInput, setTextInput] = useState(null);
   
   // Collaborative state
@@ -463,6 +466,20 @@ const Board = () => {
         delete newCursors[socketId];
         return newCursors;
       });
+    });
+
+    newSocket.on('viewport-update', (data) => {
+      // If the admin is presenting, force students to follow their viewport
+      if (data.isPresentationMode && user?.role !== 'admin') {
+        const adminCenterX = -data.pan.x / data.zoom + data.width / (2 * data.zoom);
+        const adminCenterY = -data.pan.y / data.zoom + data.height / (2 * data.zoom);
+        
+        const newPanX = -(adminCenterX * data.zoom) + window.innerWidth / 2;
+        const newPanY = -(adminCenterY * data.zoom) + window.innerHeight / 2;
+        
+        setZoom(data.zoom);
+        setPan({ x: newPanX, y: newPanY });
+      }
     });
 
     return () => newSocket.disconnect();
@@ -2328,7 +2345,7 @@ const Board = () => {
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {user?.role === 'admin' && (
+        {user?.role === 'admin' ? (
           <div className="flex items-center gap-2">
             <button 
               onClick={(e) => { e.stopPropagation(); navigate('/admin'); }}
@@ -2354,8 +2371,31 @@ const Board = () => {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
               <span className="hidden md:inline">Track Student</span>
             </button>
-
-            {user?.role !== 'admin' && user?.username === studentId && (
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                if (studentId === 'teacher_board') {
+                  navigate(`/board/${user.id}`);
+                } else {
+                  navigate('/board/teacher_board');
+                }
+              }}
+              className={`flex items-center gap-2 px-4 py-2 backdrop-blur shadow-lg border rounded-2xl font-medium transition-colors ${
+                studentId === 'teacher_board' 
+                  ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100' 
+                  : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
+              }`}
+              title={studentId === 'teacher_board' ? 'กลับไปบอร์ดของฉัน' : 'ไปที่บอร์ดของครู'}
+            >
+              <ArrowLeft size={20} className={studentId === 'teacher_board' ? '' : 'rotate-180'} />
+              <span className="hidden md:inline">
+                {studentId === 'teacher_board' ? 'กลับกระดานส่วนตัว' : 'ไปที่บอร์ดของครู (Teacher Board)'}
+              </span>
+            </button>
+            {user?.username === studentId && (
               <button
                 onClick={handleClear}
                 className="flex items-center gap-2 px-4 py-2 bg-red-50/90 backdrop-blur shadow-lg border border-red-100 rounded-2xl text-red-700 hover:bg-red-100 font-medium transition-colors"
@@ -2542,6 +2582,8 @@ const Board = () => {
         handleUpload={handleUpload}
         bgTemplate={bgTemplate} setBgTemplate={setBgTemplate}
         handleExport={handleExport}
+        isPresentationMode={isPresentationMode} setIsPresentationMode={setIsPresentationMode}
+        isAdmin={user?.role === 'admin'}
       />
 
       <div 

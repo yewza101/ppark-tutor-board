@@ -1880,17 +1880,19 @@ const Board = () => {
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const viewport = page.getViewport({ scale: 1.5 }); // Good quality, memory-efficient
+                const renderCanvas = document.createElement('canvas');
+                renderCanvas.width = viewport.width;
+                renderCanvas.height = viewport.height;
+                const renderCtx = renderCanvas.getContext('2d');
+                await page.render({ canvasContext: renderCtx, viewport }).promise;
+                
                 const canvas = document.createElement('canvas');
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
                 const ctx = canvas.getContext('2d');
-                await page.render({ canvasContext: ctx, viewport }).promise;
-                
-                // Fill white background behind the rendered PDF to prevent transparency issues
-                ctx.globalCompositeOperation = 'destination-over';
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(renderCanvas, 0, 0);
                 
                 const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
                 const uploadFile = new File([blob], `${file.name}_page${i}.png`, { type: 'image/png' });

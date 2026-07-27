@@ -102,6 +102,10 @@ io.on('connection', (socket) => {
     socket.to(`board_${data.boardId}`).emit('viewport-update', data);
   });
 
+  socket.on('laser-fade', (data) => {
+    socket.to(`board_${data.boardId}`).emit('laser-fade', data);
+  });
+
   socket.on('draw-stroke', async (data) => {
     // data = { boardId, stroke, socketId }
     socket.to(`board_${data.boardId}`).emit('draw-stroke', data);

@@ -278,6 +278,8 @@ const Board = () => {
   
   // For Pinch to Zoom
   const activePointers = useRef(new Map());
+  const fadingLasersRef = useRef([]);
+  const animationFrameRef = useRef(null);
   const lastPinchDist = useRef(null);
   const lastPinchCenter = useRef(null);
   
@@ -358,6 +360,16 @@ const Board = () => {
         remotePaths.current[data.socketId] = data.path;
       }
       if (fullRedrawRef.current) fullRedrawRef.current();
+    });
+
+    newSocket.on('laser-fade', (data) => {
+        if (data.stroke) {
+            fadingLasersRef.current.push({ ...data.stroke, fadeStartTime: Date.now() });
+            startLaserFadeAnimation();
+        }
+        if (data.socketId && remotePaths.current[data.socketId]) {
+            delete remotePaths.current[data.socketId];
+        }
     });
 
     newSocket.on('draw-stroke', (data) => {
@@ -698,6 +710,22 @@ const Board = () => {
     if (currentPath.current) drawElement(ctx, currentPath.current, zoom);
     Object.values(remotePaths.current).forEach(el => drawElement(ctx, el, zoom));
 
+    // Draw fading lasers
+    const now = Date.now();
+    fadingLasersRef.current.forEach(laser => {
+        const elapsed = now - laser.fadeStartTime;
+        let alpha = 1.0;
+        if (elapsed > 4000) {
+            alpha = 1.0 - (elapsed - 4000) / 1000;
+        }
+        if (alpha > 0) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            drawElement(ctx, laser, zoom);
+            ctx.restore();
+        }
+    });
+
     if (selectedElementIds.length > 0) {
       let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
       selectedElementIds.forEach(id => {
@@ -778,6 +806,33 @@ const Board = () => {
       }
     }
   }, [zoom, pan, selectedElementIds, drawElement]);
+
+  const startLaserFadeAnimation = useCallback(() => {
+    if (!animationFrameRef.current) {
+        const animate = () => {
+            const now = Date.now();
+            let hasFading = false;
+            
+            fadingLasersRef.current = fadingLasersRef.current.filter(laser => {
+                const elapsed = now - laser.fadeStartTime;
+                if (elapsed < 5000) {
+                    hasFading = true;
+                    return true;
+                }
+                return false;
+            });
+            
+            if (hasFading) {
+                if (redrawDraftRef.current) redrawDraftRef.current();
+                animationFrameRef.current = requestAnimationFrame(animate);
+            } else {
+                if (redrawDraftRef.current) redrawDraftRef.current();
+                animationFrameRef.current = null;
+            }
+        };
+        animationFrameRef.current = requestAnimationFrame(animate);
+    }
+  }, [redrawDraft]);
 
   const fullRedraw = useCallback(() => {
     redrawBase();
@@ -1448,6 +1503,7 @@ const Board = () => {
       const stroke = currentPath.current;
       
       // Don't save laser strokes to the permanent board elements
+      // Don't save laser strokes to the permanent board elements
       if (stroke.tool !== 'laser') {
         // Optimistic update for zero-flicker rendering
         elementsRef.current = [...elementsRef.current, stroke];
@@ -1459,6 +1515,13 @@ const Board = () => {
         });
         if (socket && socket.id) {
           socket.emit('draw-stroke', { boardId: studentId, stroke, socketId: socket.id });
+        }
+      } else {
+        const fadingLaser = { ...stroke, fadeStartTime: Date.now() };
+        fadingLasersRef.current.push(fadingLaser);
+        startLaserFadeAnimation();
+        if (socket && socket.id) {
+          socket.emit('laser-fade', { boardId: studentId, stroke: fadingLaser, socketId: socket.id });
         }
       }
     }

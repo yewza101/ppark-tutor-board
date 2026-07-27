@@ -699,14 +699,17 @@ const Board = () => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     
+    const docPages = elementsRef.current.filter(el => el.isPage);
+    const isDocumentMode = docPages.length > 0;
+
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = isDocumentMode ? '#d1d5db' : '#ffffff'; // Grey background if in document mode
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     ctx.translate(pan.x, pan.y);
     ctx.scale(zoom, zoom);
     
-    if (bgTemplate !== 'blank') {
+    if (!isDocumentMode && bgTemplate !== 'blank') {
        ctx.strokeStyle = '#e5e7eb';
        ctx.lineWidth = 1 / zoom;
        const startX = -pan.x / zoom;
@@ -748,7 +751,18 @@ const Board = () => {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    // Draw images first (including Document Pages)
     elementsRef.current.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, zoom));
+
+    // If in Document Mode, clip drawing to the pages ONLY
+    if (isDocumentMode) {
+        ctx.beginPath();
+        docPages.forEach(el => {
+            ctx.rect(el.x, el.y, el.w, el.h);
+        });
+        ctx.clip();
+    }
+
     elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, zoom));
   }, [zoom, pan, bgTemplate, drawElement]);
 
@@ -763,6 +777,17 @@ const Board = () => {
     ctx.scale(zoom, zoom);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+
+    const docPages = elementsRef.current.filter(el => el.isPage);
+    const isDocumentMode = docPages.length > 0;
+    
+    if (isDocumentMode) {
+        ctx.beginPath();
+        docPages.forEach(el => {
+            ctx.rect(el.x, el.y, el.w, el.h);
+        });
+        ctx.clip();
+    }
 
     if (currentPath.current) drawElement(ctx, currentPath.current, zoom);
     Object.values(remotePaths.current).forEach(el => drawElement(ctx, el, zoom));
@@ -1849,19 +1874,7 @@ const Board = () => {
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            
-            let currentY = 50;
-            if (elementsRef.current.length > 0) {
-                let maxY = -Infinity;
-                elementsRef.current.forEach(el => {
-                    const bbox = getElementBoundingBox(el);
-                    if (bbox.maxY !== undefined && bbox.maxY > maxY) maxY = bbox.maxY;
-                });
-                if (maxY !== -Infinity) currentY = maxY + 50;
-            } else {
-                currentY = -pan.y / zoom + 50;
-            }
-
+            let currentY = 0;
             const newElements = [];
             
             for (let i = 1; i <= pdf.numPages; i++) {
@@ -1870,7 +1883,10 @@ const Board = () => {
                 const canvas = document.createElement('canvas');
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
-                await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                await page.render({ canvasContext: ctx, viewport }).promise;
                 
                 const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
                 const uploadFile = new File([blob], `${file.name}_page${i}.png`, { type: 'image/png' });
@@ -1886,8 +1902,10 @@ const Board = () => {
                 const newEl = {
                     id: generateId(),
                     type: 'image',
+                    isPage: true,
+                    locked: true,
                     url: publicUrl,
-                    x: -pan.x / zoom + 50,
+                    x: 0,
                     y: currentY,
                     w: imgWidth,
                     h: imgHeight
@@ -1896,17 +1914,21 @@ const Board = () => {
                 newElements.push(newEl);
                 if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
                 
-                currentY += imgHeight + 20; // 20px gap
+                currentY += imgHeight + 40; // 40px gap between pages
             }
             
             if (newElements.length > 0) {
                 setElements(prev => {
                     const newEls = [...prev, ...newElements];
                     elementsRef.current = newEls;
+                    setPastStates(p => [...p, prev]);
+                    setFutureStates([]);
+                    if (typeof emitCanvasUpdate === 'function') emitCanvasUpdate(newEls);
                     return newEls;
                 });
-                setPastStates(p => [...p, elementsRef.current]);
-                setFutureStates([]);
+                // Reset pan and zoom to center the document
+                setZoom(1);
+                setPan({ x: (window.innerWidth / 2) - 400, y: 50 });
                 if (fullRedrawRef.current) fullRedrawRef.current();
             }
         } finally {

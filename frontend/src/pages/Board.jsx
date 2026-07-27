@@ -230,6 +230,41 @@ const Board = () => {
   const [viewportSize, setViewportSize] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [isPresentationMode, setIsPresentationMode] = useState(false);
 
+  const clampPan = useCallback((nx, ny, currentZoom = zoom) => {
+    const docPages = elementsRef.current.filter(el => el.isPage);
+    if (docPages.length === 0) return { x: nx, y: ny };
+    
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    docPages.forEach(p => {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x + p.w > maxX) maxX = p.x + p.w;
+      if (p.y + p.h > maxY) maxY = p.y + p.h;
+    });
+    
+    const padding = 100;
+    const maxYPan = -(minY - padding) * currentZoom;
+    const minYPan = viewportSize.h - (maxY + padding) * currentZoom;
+    const maxXPan = -(minX - padding) * currentZoom;
+    const minXPan = viewportSize.w - (maxX + padding) * currentZoom;
+    
+    let resX = nx;
+    let resY = ny;
+    
+    if (minXPan > maxXPan) {
+        resX = (viewportSize.w - (maxX - minX) * currentZoom) / 2 - minX * currentZoom;
+    } else {
+        resX = Math.max(minXPan, Math.min(maxXPan, resX));
+    }
+    
+    if (minYPan > maxYPan) {
+        resY = (viewportSize.h - (maxY - minY) * currentZoom) / 2 - minY * currentZoom;
+    } else {
+        resY = Math.max(minYPan, Math.min(maxYPan, resY));
+    }
+    return { x: resX, y: resY };
+  }, [zoom, viewportSize]);
+
   // Keep track of window size
   useEffect(() => {
     const handleResize = () => {
@@ -492,7 +527,7 @@ const Board = () => {
         const newPanY = -(adminCenterY * data.zoom) + window.innerHeight / 2;
         
         setZoom(data.zoom);
-        setPan({ x: newPanX, y: newPanY });
+        setPan(clampPan(newPanX, newPanY, data.zoom));
       }
     });
 
@@ -1357,7 +1392,7 @@ const Board = () => {
                setPan(prevPan => {
                    const nx = mouseX - (mouseX - (prevPan.x + dx)) * (calculatedZoom / prevZoom);
                    const ny = mouseY - (mouseY - (prevPan.y + dy)) * (calculatedZoom / prevZoom);
-                   return { x: nx, y: ny };
+                   return clampPan(nx, ny, calculatedZoom);
                });
                return calculatedZoom;
             });
@@ -1389,7 +1424,7 @@ const Board = () => {
     if (isPanning) {
       const dx = e.clientX - startPoint.current.x;
       const dy = e.clientY - startPoint.current.y;
-      setPan(prevPan => ({ x: prevPan.x + dx, y: prevPan.y + dy }));
+      setPan(prevPan => clampPan(prevPan.x + dx, prevPan.y + dy, zoom));
       startPoint.current = { x: e.clientX, y: e.clientY };
       return;
     }
@@ -1780,13 +1815,14 @@ const Board = () => {
       const newPanY = mouseY - (mouseY - pan.y) * (newZoom / zoom);
       
       setZoom(newZoom);
-      setPan({ x: newPanX, y: newPanY });
+      setPan(clampPan(newPanX, newPanY, newZoom));
     } else {
       // Pan
-      setPan(prevPan => ({
-        x: prevPan.x - e.deltaX,
-        y: prevPan.y - e.deltaY
-      }));
+      setPan(prevPan => clampPan(
+        prevPan.x - e.deltaX,
+        prevPan.y - e.deltaY,
+        zoom
+      ));
     }
   };
 
@@ -1952,7 +1988,7 @@ const Board = () => {
                 });
                 // Reset pan and zoom to center the document
                 setZoom(1);
-                setPan({ x: (window.innerWidth / 2) - 400, y: 50 });
+                setPan(clampPan((window.innerWidth / 2) - 400, 50, 1));
                 if (fullRedrawRef.current) fullRedrawRef.current();
             }
         } finally {
@@ -2224,7 +2260,7 @@ const Board = () => {
 
   const handleZoomIn = () => setZoom(z => Math.min(5, z + 0.2));
   const handleZoomOut = () => setZoom(z => Math.max(0.1, z - 0.2));
-  const handleResetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+  const handleResetZoom = () => { setZoom(1); setPan(clampPan(0, 0, 1)); };
 
   const trackStudentCursor = () => {
     // Find the cursor belonging to the student whose board this is
@@ -2270,10 +2306,11 @@ const Board = () => {
         const viewportWidth = containerRef.current.clientWidth;
         const viewportHeight = containerRef.current.clientHeight;
         
-        setPan({
-            x: viewportWidth / 2 - studentCursor.x * zoom,
-            y: viewportHeight / 2 - studentCursor.y * zoom
-        });
+        setPan(clampPan(
+            viewportWidth / 2 - studentCursor.x * zoom,
+            viewportHeight / 2 - studentCursor.y * zoom,
+            zoom
+        ));
     } else {
         alert('ยังหาเมาส์ของนักเรียนไม่เจอครับ (นักเรียนอาจจะยังไม่ได้ขยับเมาส์ในตอนนี้)');
     }

@@ -159,12 +159,87 @@ io.on('connection', (socket) => {
     socket.to(`board_${data.boardId}`).emit('cursor-move', { ...data, socketId: socket.id });
   });
 
+  // --- WebRTC Voice Chat Signaling ---
+  socket.on('join-voice', (data) => {
+    socket.to(`board_${data.boardId}`).emit('user-joined-voice', { socketId: socket.id, username: data.username });
+  });
+
+  socket.on('leave-voice', (data) => {
+    socket.to(`board_${data.boardId}`).emit('user-left-voice', { socketId: socket.id });
+  });
+
+  socket.on('webrtc-offer', (data) => {
+    socket.to(data.targetSocketId).emit('webrtc-offer', {
+      offer: data.offer,
+      callerSocketId: socket.id,
+      callerUsername: data.callerUsername
+    });
+  });
+
+  socket.on('webrtc-answer', (data) => {
+    socket.to(data.targetSocketId).emit('webrtc-answer', {
+      answer: data.answer,
+      callerSocketId: socket.id
+    });
+  });
+
+  socket.on('webrtc-ice-candidate', (data) => {
+    socket.to(data.targetSocketId).emit('webrtc-ice-candidate', {
+      candidate: data.candidate,
+      callerSocketId: socket.id
+    });
+  });
+
+  socket.on('mic-status-changed', (data) => {
+    socket.to(`board_${data.boardId}`).emit('mic-status-changed', { socketId: socket.id, isMuted: data.isMuted });
+  });
+
+  socket.on('admin-mute-user', (data) => {
+    socket.to(data.targetSocketId).emit('admin-mute-user', { callerSocketId: socket.id });
+  });
+
+  // --- WebRTC Screen Share Signaling ---
+  socket.on('screen-started', (data) => {
+    socket.to(`board_${data.boardId}`).emit('screen-started', { socketId: socket.id, username: data.username });
+  });
+
+  socket.on('screen-stopped', (data) => {
+    socket.to(`board_${data.boardId}`).emit('screen-stopped', { socketId: socket.id });
+  });
+
+  socket.on('request-screen', (data) => {
+    socket.to(data.targetSocketId).emit('request-screen', { callerSocketId: socket.id });
+  });
+
+  socket.on('screen-offer', (data) => {
+    socket.to(data.targetSocketId).emit('screen-offer', {
+      offer: data.offer,
+      callerSocketId: socket.id
+    });
+  });
+
+  socket.on('screen-answer', (data) => {
+    socket.to(data.targetSocketId).emit('screen-answer', {
+      answer: data.answer,
+      callerSocketId: socket.id
+    });
+  });
+
+  socket.on('screen-ice-candidate', (data) => {
+    socket.to(data.targetSocketId).emit('screen-ice-candidate', {
+      candidate: data.candidate,
+      callerSocketId: socket.id
+    });
+  });
+
   socket.on('disconnect', async () => {
     const boardId = socketRooms[socket.id];
     const role = socketRoles[socket.id];
     
     if (boardId) {
       socket.to(`board_${boardId}`).emit('cursor-leave', socket.id);
+      socket.to(`board_${boardId}`).emit('user-left-voice', { socketId: socket.id });
+
       
       delete socketRooms[socket.id];
       delete socketRoles[socket.id];

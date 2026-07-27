@@ -8,12 +8,21 @@ const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle, isMuted, se
   const user = useAuthStore(state => state.user);
 
   useEffect(() => {
+    if (!socket || !isVoiceEnabled) return;
+    
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = !isMuted;
+      });
+    }
+    socket.emit('mic-status-changed', { boardId, isMuted });
+  }, [isMuted, socket, isVoiceEnabled, boardId]);
+
+  useEffect(() => {
     if (!socket || !isVoiceEnabled) {
       cleanup();
       return;
     }
-
-    socket.emit('mic-status-changed', { boardId, isMuted });
 
     const startVoice = async () => {
       try {
@@ -121,7 +130,7 @@ const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle, isMuted, se
         socket.off('admin-mute-user', handleAdminMute);
       }
     };
-  }, [socket, isVoiceEnabled, boardId, user, isMuted]); // Re-run when isMuted changes to broadcast status
+  }, [socket, isVoiceEnabled, boardId, user]); // Removed isMuted to prevent reconnects
 
   const createPeerConnection = (targetSocketId, username) => {
     const pc = new RTCPeerConnection({

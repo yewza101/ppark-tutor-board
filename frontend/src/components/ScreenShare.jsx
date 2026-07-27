@@ -195,22 +195,50 @@ const ScreenShare = ({ socket, boardId, isScreenSharing, onScreenShareToggle }) 
 
   // Find the first available remote stream (Admin's screen)
   const stream = Object.values(remoteStreams)[0];
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    if (videoRef.current && stream && videoRef.current.srcObject !== stream) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  const toggleFullscreen = () => {
+    if (!videoRef.current) return;
+    
+    if (!document.fullscreenElement) {
+      videoRef.current.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   return (
-    <div className="absolute top-20 left-4 z-40 bg-gray-900 rounded-lg shadow-2xl overflow-hidden border border-gray-700 resize overflow-auto" style={{ width: '400px', height: '250px', minWidth: '200px', minHeight: '150px' }}>
-      <div className="bg-gray-800 text-white text-xs p-2 font-bold cursor-move flex justify-between">
+    <div className="absolute top-20 left-4 z-40 bg-gray-900 rounded-lg shadow-2xl overflow-hidden border border-gray-700 resize overflow-auto flex flex-col" style={{ width: '400px', height: '250px', minWidth: '200px', minHeight: '150px' }}>
+      <div className="bg-gray-800 text-white text-xs p-2 font-bold cursor-move flex justify-between items-center shrink-0">
         <span>Admin Screen Share</span>
+        <button 
+          onClick={toggleFullscreen}
+          className="text-gray-300 hover:text-white px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
+          title="Full Screen"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+        </button>
       </div>
-      <video
-        autoPlay
-        playsInline
-        ref={(el) => {
-          if (el && stream) {
-            el.srcObject = stream;
-          }
-        }}
-        className="w-full h-full object-contain bg-black"
-      />
+      <div className="flex-1 w-full bg-black relative">
+        <video
+          autoPlay
+          playsInline
+          ref={videoRef}
+          onClick={toggleFullscreen}
+          className="absolute inset-0 w-full h-full object-contain cursor-pointer"
+          title="Click to view Fullscreen"
+        />
+      </div>
     </div>
   );
 };

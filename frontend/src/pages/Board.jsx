@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import Toolbar from '../components/Toolbar';
 import VoiceChat from '../components/VoiceChat';
+import ScreenShare from '../components/ScreenShare';
 import { API_URL } from '../config';
 import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -201,6 +202,10 @@ const Board = () => {
   // Tools state
   const [currentTool, setCurrentTool] = useState('pencil');
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [voicePeers, setVoicePeers] = useState({});
+  const [showParticipants, setShowParticipants] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [penMode, setPenMode] = useState(false);
   const [brushColor, setBrushColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(5);
@@ -2150,26 +2155,130 @@ const Board = () => {
         socket={socket} 
         boardId={studentId} 
         isVoiceEnabled={isVoiceEnabled} 
-        onVoiceToggle={setIsVoiceEnabled} 
+        onVoiceToggle={setIsVoiceEnabled}
+        isMuted={isMuted}
+        setIsMuted={setIsMuted}
+        onPeersUpdate={setVoicePeers}
       />
 
-      <div className="absolute bottom-4 right-4 z-50">
-        <button
-          onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
-          className={`flex items-center justify-center w-14 h-14 rounded-full shadow-lg transition-all ${isVoiceEnabled ? 'bg-green-500 hover:bg-green-600 text-white animate-pulse' : 'bg-gray-800 hover:bg-gray-700 text-white'}`}
-          title={isVoiceEnabled ? 'Mute / Leave Voice' : 'Join Voice Chat'}
-        >
-          {isVoiceEnabled ? (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-            </svg>
-          )}
-        </button>
+      <ScreenShare 
+        socket={socket} 
+        boardId={studentId} 
+        isScreenSharing={isScreenSharing} 
+        onScreenShareToggle={setIsScreenSharing} 
+      />
+
+      {/* Admin Participants Modal */}
+      {showParticipants && user?.role === 'admin' && (
+        <div className="absolute bottom-20 right-4 w-72 bg-white rounded-xl shadow-2xl overflow-hidden z-50 border border-gray-100">
+          <div className="bg-indigo-600 text-white p-4 font-bold flex justify-between items-center">
+            <span>Participants ({Object.keys(voicePeers).length + (isVoiceEnabled ? 1 : 0)})</span>
+            <button onClick={() => setShowParticipants(false)} className="hover:text-indigo-200">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-2">
+            {isVoiceEnabled && (
+              <div className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
+                <span className="font-medium text-gray-800">{user?.username} (You)</span>
+                <span className={isMuted ? 'text-red-500 text-xs font-bold' : 'text-green-500 text-xs font-bold'}>
+                  {isMuted ? 'Muted' : 'Speaking'}
+                </span>
+              </div>
+            )}
+            {Object.entries(voicePeers).map(([socketId, peer]) => (
+              <div key={socketId} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
+                <span className="font-medium text-gray-800">{peer.username}</span>
+                <div className="flex items-center gap-2">
+                  <span className={peer.isMuted ? 'text-red-500 text-xs font-bold' : 'text-green-500 text-xs font-bold'}>
+                    {peer.isMuted ? 'Muted' : 'Live'}
+                  </span>
+                  <button 
+                    onClick={() => socket.emit('admin-mute-user', { targetSocketId: socketId })}
+                    className="p-1 text-red-500 hover:bg-red-50 rounded"
+                    title="Force Mute"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ))}
+            {Object.keys(voicePeers).length === 0 && !isVoiceEnabled && (
+              <div className="text-center text-gray-500 p-4">No one is in Voice Chat</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Voice Controls Widget */}
+      <div className="absolute bottom-4 right-4 z-50 flex items-center gap-3 bg-white p-2 rounded-full shadow-xl border border-gray-200">
+        {user?.role === 'admin' && (
+          <>
+            <button
+              onClick={() => setIsScreenSharing(!isScreenSharing)}
+              className={`flex items-center justify-center w-10 h-10 rounded-full transition-all ${isScreenSharing ? 'bg-blue-500 hover:bg-blue-600 text-white animate-pulse' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+              title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M2 6a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setShowParticipants(!showParticipants)}
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-all"
+              title="Participants List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+              </svg>
+            </button>
+          </>
+        )}
+
+        {!isVoiceEnabled ? (
+          <button
+            onClick={() => setIsVoiceEnabled(true)}
+            className="flex items-center justify-center px-4 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-all"
+            title="Join Voice Chat"
+          >
+            Join Voice
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={() => setIsMuted(!isMuted)}
+              className={`flex items-center justify-center w-12 h-12 rounded-full shadow-md transition-all ${!isMuted ? 'bg-green-500 hover:bg-green-600 text-white animate-pulse' : 'bg-yellow-500 hover:bg-yellow-600 text-white'}`}
+              title={isMuted ? 'Unmute' : 'Mute'}
+            >
+              {!isMuted ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setIsVoiceEnabled(false);
+                setIsMuted(false);
+              }}
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-md transition-all"
+              title="Leave Voice"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </>
+        )}
       </div>
 
       <Toolbar 

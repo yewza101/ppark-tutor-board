@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import useAuthStore from '../store/useAuthStore';
 
-const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle }) => {
-  const [peers, setPeers] = useState({}); // { socketId: { username, stream } }
+const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle, isMuted, setIsMuted, onPeersUpdate }) => {
+  const [peers, setPeers] = useState({}); // { socketId: { username, stream, isMuted } }
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({}); // { socketId: RTCPeerConnection }
   const user = useAuthStore(state => state.user);
@@ -13,10 +13,13 @@ const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle }) => {
       return;
     }
 
+    socket.emit('mic-status-changed', { boardId, isMuted });
+
     const startVoice = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         localStreamRef.current = stream;
+        stream.getAudioTracks().forEach(track => track.enabled = !isMuted);
         
         socket.emit('join-voice', { boardId, username: user?.username || 'Unknown' });
       } catch (err) {
@@ -31,6 +34,11 @@ const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle }) => {
     // Handlers
     const handleUserJoined = async ({ socketId, username }) => {
       console.log(`User joined voice: ${username} (${socketId})`);
+      setPeers(prev => {
+        const newPeers = { ...prev, [socketId]: { ...prev[socketId], username, isMuted: false } };
+        if (onPeersUpdate) onPeersUpdate(newPeers);
+        return newPeers;
+      });
       const pc = createPeerConnection(socketId, username);
       
       // We are the caller (the one who was already here)
@@ -80,11 +88,26 @@ const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle }) => {
       removePeer(socketId);
     };
 
+    const handleMicStatus = ({ socketId, isMuted }) => {
+      setPeers(prev => {
+        if (!prev[socketId]) return prev;
+        const newPeers = { ...prev, [socketId]: { ...prev[socketId], isMuted } };
+        if (onPeersUpdate) onPeersUpdate(newPeers);
+        return newPeers;
+      });
+    };
+
+    const handleAdminMute = () => {
+      if (setIsMuted) setIsMuted(true);
+    };
+
     socket.on('user-joined-voice', handleUserJoined);
     socket.on('webrtc-offer', handleOffer);
     socket.on('webrtc-answer', handleAnswer);
     socket.on('webrtc-ice-candidate', handleIceCandidate);
     socket.on('user-left-voice', handleUserLeft);
+    socket.on('mic-status-changed', handleMicStatus);
+    socket.on('admin-mute-user', handleAdminMute);
 
     return () => {
       cleanup();
@@ -94,9 +117,11 @@ const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle }) => {
         socket.off('webrtc-answer', handleAnswer);
         socket.off('webrtc-ice-candidate', handleIceCandidate);
         socket.off('user-left-voice', handleUserLeft);
+        socket.off('mic-status-changed', handleMicStatus);
+        socket.off('admin-mute-user', handleAdminMute);
       }
     };
-  }, [socket, isVoiceEnabled, boardId, user]);
+  }, [socket, isVoiceEnabled, boardId, user, isMuted]); // Re-run when isMuted changes to broadcast status
 
   const createPeerConnection = (targetSocketId, username) => {
     const pc = new RTCPeerConnection({
@@ -124,13 +149,18 @@ const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle }) => {
     };
 
     pc.ontrack = (event) => {
-      setPeers(prev => ({
-        ...prev,
-        [targetSocketId]: {
-          username,
-          stream: event.streams[0]
-        }
-      }));
+      setPeers(prev => {
+        const newPeers = {
+          ...prev,
+          [targetSocketId]: {
+            ...prev[targetSocketId],
+            username,
+            stream: event.streams[0]
+          }
+        };
+        if (onPeersUpdate) onPeersUpdate(newPeers);
+        return newPeers;
+      });
     };
 
     pc.oniceconnectionstatechange = () => {
@@ -150,6 +180,7 @@ const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle }) => {
     setPeers(prev => {
       const newPeers = { ...prev };
       delete newPeers[socketId];
+      if (onPeersUpdate) onPeersUpdate(newPeers);
       return newPeers;
     });
   };
@@ -163,6 +194,7 @@ const VoiceChat = ({ socket, boardId, isVoiceEnabled, onVoiceToggle }) => {
       removePeer(socketId);
     });
     setPeers({});
+    if (onPeersUpdate) onPeersUpdate({});
     if (socket && isVoiceEnabled) {
        socket.emit('leave-voice', { boardId });
     }

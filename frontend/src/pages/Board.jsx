@@ -814,8 +814,22 @@ const Board = () => {
             ctx.setLineDash([]);
             ctx.fillStyle = '#ffffff';
             const hs = 12 / zoom;
+            
+            // Scale handle
             ctx.fillRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
             ctx.strokeRect(gMaxX + pad - hs/2, gMaxY + pad - hs/2, hs, hs);
+            
+            // Rotate handle
+            ctx.beginPath();
+            ctx.arc((gMinX + gMaxX) / 2, gMinY - pad - 20/zoom, hs/2, 0, Math.PI*2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Line connecting rotate handle to box
+            ctx.beginPath();
+            ctx.moveTo((gMinX + gMaxX) / 2, gMinY - pad);
+            ctx.lineTo((gMinX + gMaxX) / 2, gMinY - pad - 20/zoom + hs/2);
+            ctx.stroke();
         }
       }
     }
@@ -1025,6 +1039,25 @@ const Board = () => {
             }
         }
         
+        // Fallback for group rotate (or single path/line)
+        const hsRotate = 25 / zoom;
+        const groupRotCX = (gMinX + gMaxX) / 2;
+        const groupRotCY = gMinY - pad - 20/zoom;
+        if (Math.hypot(pos.x - groupRotCX, pos.y - groupRotCY) <= hsRotate) {
+            const groupCX = (gMinX + gMaxX) / 2;
+            const groupCY = (gMinY + gMaxY) / 2;
+            dragContext.current = {
+                type: 'rotateGroup', startX: pos.x, startY: pos.y,
+                cx: groupCX, cy: groupCY,
+                startAngle: Math.atan2(pos.y - groupCY, pos.x - groupCX),
+                origElements: elementsRef.current.filter(e => selectedElementIds.includes(e.id)).map(e => JSON.parse(JSON.stringify(e))),
+                gMinX, gMinY, gMaxX, gMaxY,
+                origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
+            };
+            e.target.setPointerCapture(e.pointerId);
+            return;
+        }
+
         if (pos.x >= gMaxX + pad - hs && pos.x <= gMaxX + pad + hs && pos.y >= gMaxY + pad - hs && pos.y <= gMaxY + pad + hs) {
           dragContext.current = { 
             type: 'scale', startX: pos.x, startY: pos.y, 
@@ -1327,6 +1360,47 @@ const Board = () => {
                  el.y1 = origEl.y1 + dy;
                }
             }
+          } else if (dragContext.current.type === 'rotateGroup') {
+              dragContext.current.isMoved = true;
+              const currentAngle = Math.atan2(pos.y - dragContext.current.cy, pos.x - dragContext.current.cx);
+              let angleDelta = currentAngle - dragContext.current.startAngle;
+              
+              if (e.shiftKey) {
+                  const snapAngle = Math.PI / 12; // 15 degrees
+                  angleDelta = Math.round(angleDelta / snapAngle) * snapAngle;
+              }
+              
+              elementsRef.current.forEach(el => {
+                  if (selectedElementIds.includes(el.id)) {
+                      const origEl = dragContext.current.origElements.find(e => e.id === el.id);
+                      if (!origEl) return;
+                      
+                      if (el.type === 'path') {
+                          el.points = origEl.points.map(p => {
+                              if (p === null) return null;
+                              return rotatePoint(p.x, p.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                          });
+                          el.bbox = null;
+                          el.path2d = null;
+                      } else if (el.type === 'line') {
+                          const p1 = rotatePoint(origEl.x1, origEl.y1, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                          const p2 = rotatePoint(origEl.x2, origEl.y2, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                          el.x1 = p1.x; el.y1 = p1.y;
+                          el.x2 = p2.x; el.y2 = p2.y;
+                      } else if (el.type === 'circle') {
+                          const newCenter = rotatePoint(origEl.x, origEl.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                          el.x = newCenter.x;
+                          el.y = newCenter.y;
+                      } else {
+                          const origCX = origEl.x + (origEl.w || 0)/2;
+                          const origCY = origEl.y + (origEl.h || 0)/2;
+                          const newCenter = rotatePoint(origCX, origCY, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                          el.x = newCenter.x - (origEl.w || 0)/2;
+                          el.y = newCenter.y - (origEl.h || 0)/2;
+                          el.rotation = (origEl.rotation || 0) + angleDelta;
+                      }
+                  }
+              });
           } else if (dragContext.current.type === 'scale') {
              const origW = dragContext.current.gMaxX - dragContext.current.gMinX;
              const newW = Math.max(20, origW + dx);
@@ -1357,7 +1431,17 @@ const Board = () => {
         });
         
         if (dragContext.current.origLassoPath) {
-            if (dragContext.current.type === 'rotate') {
+            if (dragContext.current.type === 'rotateGroup') {
+                const currentAngle = Math.atan2(pos.y - dragContext.current.cy, pos.x - dragContext.current.cx);
+                let angleDelta = currentAngle - dragContext.current.startAngle;
+                if (e.shiftKey) {
+                    const snapAngle = Math.PI / 12; // 15 degrees
+                    angleDelta = Math.round(angleDelta / snapAngle) * snapAngle;
+                }
+                activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => {
+                    return rotatePoint(p.x, p.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                });
+            } else if (dragContext.current.type === 'rotate') {
             const dx = pos.x - dragContext.current.cx;
             const dy = pos.y - dragContext.current.cy;
             // Calculate angle, adjust by Math.PI/2 because rotate handle is at the top (which is -y)

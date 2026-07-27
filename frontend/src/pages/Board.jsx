@@ -2012,6 +2012,20 @@ const Board = () => {
   const handleZoomOut = () => setZoom(z => Math.max(0.1, z - 0.2));
   const handleResetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
+  const trackStudentCursor = () => {
+    // Find the cursor belonging to the student whose board this is
+    const studentCursor = Object.values(cursors).find(c => c.username === studentId);
+    if (studentCursor && containerRef.current) {
+        const viewportWidth = containerRef.current.clientWidth;
+        const viewportHeight = containerRef.current.clientHeight;
+        
+        setPan({
+            x: viewportWidth / 2 - studentCursor.x * zoom,
+            y: viewportHeight / 2 - studentCursor.y * zoom
+        });
+    }
+  };
+
   const handleChangeSelectionColor = (newColor) => {
       let changed = false;
       const newElements = elementsRef.current.map(el => {
@@ -2156,6 +2170,22 @@ const Board = () => {
                 <ArrowLeft size={20} /> <span className="hidden xl:inline">Back to Monitor ({returnGroup})</span>
               </button>
             )}
+            <button
+              onClick={trackStudentCursor}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-50/90 backdrop-blur shadow-lg border border-indigo-100 rounded-2xl text-indigo-700 hover:bg-indigo-100 font-medium transition-colors"
+              title="Track Student"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+              <span className="hidden md:inline">Track Student</span>
+            </button>
+            <button
+              onClick={handleClear}
+              className="flex items-center gap-2 px-4 py-2 bg-red-50/90 backdrop-blur shadow-lg border border-red-100 rounded-2xl text-red-700 hover:bg-red-100 font-medium transition-colors"
+              title="Clear Board"
+            >
+              <Trash2 size={20} />
+              <span className="hidden md:inline">Clear Board</span>
+            </button>
           </div>
         )}
       </div>

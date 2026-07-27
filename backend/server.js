@@ -19,6 +19,7 @@ const socketRooms = {}; // Track which board each socket is in
 const boardConnectionCount = {}; // Track total sockets (for memory eviction)
 const studentConnectionCount = {}; // Track only student sockets (for online status)
 const socketRoles = {}; // Track role of each socket (admin/student)
+const activeScreenShares = {}; // Track which boards have active screen sharing
 
 // Use a wide cors configuration since this is a local setup
 const io = new Server(server, {
@@ -208,7 +209,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('request-screen', (data) => {
-    socket.to(data.targetSocketId).emit('request-screen', { callerSocketId: socket.id });
+    // If targetSocketId is not provided, broadcast to the board so the admin can respond
+    if (data.targetSocketId) {
+      socket.to(data.targetSocketId).emit('request-screen', { callerSocketId: socket.id });
+    } else {
+      socket.to(`board_${data.boardId}`).emit('request-screen', { callerSocketId: socket.id });
+    }
   });
 
   socket.on('screen-offer', (data) => {

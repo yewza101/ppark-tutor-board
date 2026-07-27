@@ -715,8 +715,8 @@ const Board = () => {
     fadingLasersRef.current.forEach(laser => {
         const elapsed = now - laser.fadeStartTime;
         let alpha = 1.0;
-        if (elapsed > 4000) {
-            alpha = 1.0 - (elapsed - 4000) / 1000;
+        if (elapsed > 2000) {
+            alpha = 1.0 - (elapsed - 2000) / 1000;
         }
         if (alpha > 0) {
             ctx.save();
@@ -815,7 +815,7 @@ const Board = () => {
             
             fadingLasersRef.current = fadingLasersRef.current.filter(laser => {
                 const elapsed = now - laser.fadeStartTime;
-                if (elapsed < 5000) {
+                if (elapsed < 3000) {
                     hasFading = true;
                     return true;
                 }
@@ -1392,10 +1392,6 @@ const Board = () => {
     if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser' || currentTool === 'highlighter') {
       currentPath.current.points.push(pos);
       currentPath.current.path2d = null; // Invalidate cached path
-      // Laser trailing effect
-      if (currentTool === 'laser' && currentPath.current.points.length > 30) {
-        currentPath.current.points.shift();
-      }
     } else if (currentTool === 'line') {
       currentPath.current.x2 = pos.x;
       currentPath.current.y2 = pos.y;

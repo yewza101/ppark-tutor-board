@@ -761,37 +761,45 @@ const Board = () => {
     ctx.translate(pan.x, pan.y);
     ctx.scale(zoom, zoom);
     
+    // Calculate visible bounds for culling
+    const vMinX = -pan.x / zoom;
+    const vMinY = -pan.y / zoom;
+    const vMaxX = (canvas.width - pan.x) / zoom;
+    const vMaxY = (canvas.height - pan.y) / zoom;
+
+    const isVisible = (el) => {
+        const box = getElementBoundingBox(el);
+        if (box.minX === undefined) return true; // Draw if bounds unknown
+        return !(box.maxX < vMinX || box.minX > vMaxX || box.maxY < vMinY || box.minY > vMaxY);
+    };
+    
     if (!isDocumentMode && bgTemplate !== 'blank') {
        ctx.strokeStyle = '#e5e7eb';
        ctx.lineWidth = 1 / zoom;
-       const startX = -pan.x / zoom;
-       const startY = -pan.y / zoom;
-       const endX = (canvas.width - pan.x) / zoom;
-       const endY = (canvas.height - pan.y) / zoom;
        
        ctx.beginPath();
        if (bgTemplate === 'lined' || bgTemplate === 'grid') {
            const spacing = 40;
-           const firstLineY = Math.floor(startY / spacing) * spacing;
-           for (let y = firstLineY; y < endY; y += spacing) {
-               ctx.moveTo(startX, y);
-               ctx.lineTo(endX, y);
+           const firstLineY = Math.floor(vMinY / spacing) * spacing;
+           for (let y = firstLineY; y < vMaxY; y += spacing) {
+               ctx.moveTo(vMinX, y);
+               ctx.lineTo(vMaxX, y);
            }
            if (bgTemplate === 'grid') {
-               const firstLineX = Math.floor(startX / spacing) * spacing;
-               for (let x = firstLineX; x < endX; x += spacing) {
-                   ctx.moveTo(x, startY);
-                   ctx.lineTo(x, endY);
+               const firstLineX = Math.floor(vMinX / spacing) * spacing;
+               for (let x = firstLineX; x < vMaxX; x += spacing) {
+                   ctx.moveTo(x, vMinY);
+                   ctx.lineTo(x, vMaxY);
                }
            }
            ctx.stroke();
        } else if (bgTemplate === 'dot') {
            const spacing = 40;
            ctx.fillStyle = '#d1d5db';
-           const firstLineY = Math.floor(startY / spacing) * spacing;
-           const firstLineX = Math.floor(startX / spacing) * spacing;
-           for (let y = firstLineY; y < endY; y += spacing) {
-               for (let x = firstLineX; x < endX; x += spacing) {
+           const firstLineY = Math.floor(vMinY / spacing) * spacing;
+           const firstLineX = Math.floor(vMinX / spacing) * spacing;
+           for (let y = firstLineY; y < vMaxY; y += spacing) {
+               for (let x = firstLineX; x < vMaxX; x += spacing) {
                    ctx.beginPath();
                    ctx.arc(x, y, 2 / zoom, 0, Math.PI * 2);
                    ctx.fill();
@@ -803,19 +811,21 @@ const Board = () => {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Draw images first (including Document Pages)
-    elementsRef.current.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, zoom));
+    // Draw images first (including Document Pages), cull invisible ones
+    elementsRef.current.filter(el => el.type === 'image' && isVisible(el)).forEach(el => drawElement(ctx, el, zoom));
 
     // If in Document Mode, clip drawing to the pages ONLY
     if (isDocumentMode) {
         ctx.beginPath();
         docPages.forEach(el => {
-            ctx.rect(el.x, el.y, el.w, el.h);
+            // Include a tiny bit of padding to prevent edge cutting issues
+            ctx.rect(el.x - 1, el.y - 1, el.w + 2, el.h + 2);
         });
         ctx.clip();
     }
 
-    elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, zoom));
+    // Draw other elements, cull invisible ones
+    elementsRef.current.filter(el => el.type !== 'image' && isVisible(el)).forEach(el => drawElement(ctx, el, zoom));
     ctx.restore();
   }, [zoom, pan, bgTemplate, drawElement]);
 
@@ -1932,7 +1942,10 @@ const Board = () => {
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            let currentY = 0;
+            const existingPages = elementsRef.current.filter(el => el.isPage);
+            let currentY = existingPages.length > 0 
+                ? Math.max(...existingPages.map(el => el.y + el.h)) + 40 
+                : 0;
             const newElements = [];
             
             for (let i = 1; i <= pdf.numPages; i++) {
@@ -1969,7 +1982,7 @@ const Board = () => {
                     isPage: true,
                     locked: true,
                     url: publicUrl,
-                    x: 0,
+                    x: -(imgWidth / 2),
                     y: currentY,
                     w: imgWidth,
                     h: imgHeight

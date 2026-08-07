@@ -107,4 +107,34 @@ router.delete('/students/:id', async (req, res) => {
   res.json({ message: 'Student deleted successfully' });
 });
 
+// Register a new teacher (admin only)
+router.post('/register-teacher', async (req, res) => {
+  const { teacher_code, username } = req.body;
+  
+  if (!teacher_code || !username) {
+    return res.status(400).json({ message: 'Username and teacher code are required' });
+  }
+
+  const defaultPasswordHash = bcrypt.hashSync('default-teacher-password', 10);
+
+  const { data, error } = await supabase
+    .from('users')
+    .insert([{ 
+      username, 
+      password_hash: defaultPasswordHash, 
+      role: 'admin', 
+      teacher_code 
+    }])
+    .select('id, username, role, teacher_code');
+    
+  if (error) {
+    if (error.code === '23505') { // Unique violation
+      return res.status(400).json({ message: 'Teacher code or username already exists' });
+    }
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+  
+  res.status(201).json({ message: 'Teacher registered successfully', user: data[0] });
+});
+
 module.exports = router;

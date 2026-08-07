@@ -10,6 +10,11 @@ const AdminDashboard = () => {
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
+  
+  // Register Teacher states
+  const [newTeacherName, setNewTeacherName] = useState('');
+  const [newTeacherCode, setNewTeacherCode] = useState('');
+  
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [activeBoards, setActiveBoards] = useState([]);
@@ -71,6 +76,23 @@ const AdminDashboard = () => {
       fetchStudents();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to add student');
+    }
+  };
+
+  const handleRegisterTeacher = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    try {
+      await axios.post(`${API_URL}/api/admin/register-teacher`, 
+        { username: newTeacherName, teacher_code: newTeacherCode },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSuccess(`Teacher ${newTeacherName} added successfully!`);
+      setNewTeacherName('');
+      setNewTeacherCode('');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to register teacher');
     }
   };
 
@@ -178,6 +200,43 @@ const AdminDashboard = () => {
                   className="w-full px-4 py-2.5 text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors font-medium"
                 >
                   Create Student
+                </button>
+              </form>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mt-8">
+              <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                <UserPlus className="text-indigo-600" /> Add New Teacher
+              </h2>
+              
+              <form onSubmit={handleRegisterTeacher} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Teacher Name</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                    value={newTeacherName}
+                    onChange={(e) => setNewTeacherName(e.target.value)}
+                    placeholder="e.g. Teacher Bob"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Teacher Code</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                    value={newTeacherCode}
+                    onChange={(e) => setNewTeacherCode(e.target.value)}
+                    placeholder="e.g. BOB-1234"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full px-4 py-2.5 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 active:bg-indigo-800 transition-colors font-medium"
+                >
+                  Create Teacher
                 </button>
               </form>
             </div>

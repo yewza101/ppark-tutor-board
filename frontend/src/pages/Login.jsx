@@ -6,14 +6,9 @@ import { API_URL } from '../config';
 
 const Login = () => {
   const [activeTab, setActiveTab] = useState('student'); // 'student' or 'teacher'
-  const [isRegisteringTeacher, setIsRegisteringTeacher] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [teacherCode, setTeacherCode] = useState('');
-  
-  // Registration states
-  const [registerUsername, setRegisterUsername] = useState('');
-  const [registerCode, setRegisterCode] = useState('');
   
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -63,30 +58,6 @@ const Login = () => {
       navigate('/admin');
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid Teacher Code.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegisterTeacher = async (e) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-    setLoading(true);
-
-    try {
-      await axios.post(`${API_URL}/api/auth/register-teacher`, {
-        username: registerUsername,
-        teacher_code: registerCode
-      });
-      
-      setSuccess('Teacher account created successfully! Please login.');
-      setIsRegisteringTeacher(false);
-      setTeacherCode(registerCode);
-      setRegisterUsername('');
-      setRegisterCode('');
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to register teacher.');
     } finally {
       setLoading(false);
     }
@@ -161,50 +132,6 @@ const Login = () => {
               {loading ? 'Signing in...' : 'Sign in as Student'}
             </button>
           </form>
-        ) : isRegisteringTeacher ? (
-          <form className="mt-4 space-y-6" onSubmit={handleRegisterTeacher}>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Teacher Name (ชื่อคุณครู)</label>
-                <input
-                  type="text"
-                  required
-                  className="w-full px-4 py-2 mt-1 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
-                  value={registerUsername}
-                  onChange={(e) => setRegisterUsername(e.target.value)}
-                  placeholder="e.g. Teacher Alice"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Create Teacher Code (ตั้งรหัสคุณครู)</label>
-                <input
-                  type="text"
-                  required
-                  className="w-full px-4 py-2 mt-1 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
-                  value={registerCode}
-                  onChange={(e) => setRegisterCode(e.target.value)}
-                  placeholder="e.g. ALICE-1234"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full px-4 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 transition-colors"
-            >
-              {loading ? 'Creating account...' : 'Create Teacher Account'}
-            </button>
-            <div className="text-center mt-4">
-              <button
-                type="button"
-                onClick={() => { setIsRegisteringTeacher(false); setError(''); setSuccess(''); }}
-                className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
-              >
-                Already have a code? Login here
-              </button>
-            </div>
-          </form>
         ) : (
           <form className="mt-4 space-y-6" onSubmit={handleTeacherLogin}>
             <div className="space-y-4">
@@ -228,15 +155,6 @@ const Login = () => {
             >
               {loading ? 'Signing in...' : 'Sign in as Teacher'}
             </button>
-            <div className="text-center mt-4">
-              <button
-                type="button"
-                onClick={() => { setIsRegisteringTeacher(true); setError(''); setSuccess(''); }}
-                className="text-sm text-gray-500 hover:text-gray-700 font-medium underline"
-              >
-                Register New Teacher
-              </button>
-            </div>
           </form>
         )}
       </div>

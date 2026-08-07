@@ -33,6 +33,7 @@ router.get('/students', async (req, res) => {
     .from('users')
     .select('id, username, created_at, group_name')
     .eq('role', 'student')
+    .eq('teacher_id', req.user.id)
     .order('id', { ascending: false });
 
   if (error) {
@@ -52,7 +53,7 @@ router.post('/students', async (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     const { data, error } = await supabase
       .from('users')
-      .insert([{ username, password_hash: hash, role: 'student', group_name: group_name || 'General' }])
+      .insert([{ username, password_hash: hash, role: 'student', group_name: group_name || 'General', teacher_id: req.user.id }])
       .select('id, username, group_name');
       
     if (error) {
@@ -80,7 +81,8 @@ router.put('/students/:id/password', async (req, res) => {
     .from('users')
     .update({ password_hash: hash })
     .eq('id', req.params.id)
-    .eq('role', 'student');
+    .eq('role', 'student')
+    .eq('teacher_id', req.user.id);
   
   if (error) {
     return res.status(500).json({ message: 'Failed to update password' });
@@ -95,7 +97,8 @@ router.delete('/students/:id', async (req, res) => {
     .from('users')
     .delete()
     .eq('id', req.params.id)
-    .eq('role', 'student');
+    .eq('role', 'student')
+    .eq('teacher_id', req.user.id);
   
   if (error) {
     return res.status(500).json({ message: 'Failed to delete student' });

@@ -116,21 +116,44 @@ const GlobalVoiceWidget = () => {
       });
     };
 
+    const processCandidateQueue = async (pc) => {
+      if (pc.candidateQueue && pc.candidateQueue.length > 0) {
+        for (const candidate of pc.candidateQueue) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (e) {
+            console.error("Failed to add queued candidate:", e);
+          }
+        }
+        pc.candidateQueue = [];
+      }
+    };
+
     const handleOffer = async ({ offer, callerSocketId, callerUsername }) => {
       const pc = createPeerConnection(callerSocketId, callerUsername);
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      socket.emit('webrtc-answer', {
-        targetSocketId: callerSocketId,
-        answer
-      });
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        await processCandidateQueue(pc);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('webrtc-answer', {
+          targetSocketId: callerSocketId,
+          answer
+        });
+      } catch (err) {
+        console.error("Error handling offer:", err);
+      }
     };
 
     const handleAnswer = async ({ answer, callerSocketId }) => {
       const pc = peerConnectionsRef.current[callerSocketId];
       if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          await processCandidateQueue(pc);
+        } catch (err) {
+          console.error("Error handling answer:", err);
+        }
       }
     };
 
@@ -138,9 +161,13 @@ const GlobalVoiceWidget = () => {
       const pc = peerConnectionsRef.current[callerSocketId];
       if (pc && candidate) {
         try {
+          // If remote description isn't set yet, the browser might throw an error.
+          // In newer browsers, addIceCandidate queues it automatically, but we'll use a try/catch to be safe.
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (e) {
-          console.error("Error adding ice candidate", e);
+          console.warn("Error adding ice candidate, queuing it manually:", e);
+          if (!pc.candidateQueue) pc.candidateQueue = [];
+          pc.candidateQueue.push(candidate);
         }
       }
     };

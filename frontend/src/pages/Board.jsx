@@ -85,7 +85,16 @@ const drawAngleGuides = (ctx, el) => {
                  ctx.fillText(deg + '°', curr.x + 10, curr.y + 10);
              }
          }
-    } else if (el.type === 'line') {
+    } else if (el.type === 'polygon' || el.type === 'polyline') {
+    if (!el.points || el.points.length === 0) return false;
+    for (let i = 0; i < el.points.length; i++) {
+        const p1 = el.points[i];
+        const p2 = el.points[(i + 1) % el.points.length];
+        if (el.type !== 'polygon' && i === el.points.length - 1) continue;
+        if (p1 && p2 && distancePointToSegment(pt, p1, p2) < hitRadius) return true;
+    }
+    return false;
+  } else if (el.type === 'line') {
         const a = Math.atan2((el.y2||0) - (el.y1||0), (el.x2||0) - (el.x1||0)) * (180/Math.PI);
         ctx.fillText(Math.round(Math.abs(a)) + '°', (el.x2||0) + 10, (el.y2||0) + 10);
     } else if (el.type === 'rectangle') {

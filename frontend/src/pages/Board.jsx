@@ -1848,11 +1848,14 @@ const Board = () => {
             } else if (dragContext.current.type === 'vertex') {
               const dx = (pos.x - dragContext.current.startX);
               const dy = (pos.y - dragContext.current.startY);
-              if (el.type === 'polygon') {
+              if (el.type === 'polygon' || el.isSnappedAngle || el.isSnapped || el.type === 'path') {
                  el.points[dragContext.current.vertexIndex] = { 
                      x: dragContext.current.origElements[0].points[dragContext.current.vertexIndex].x + dx, 
                      y: dragContext.current.origElements[0].points[dragContext.current.vertexIndex].y + dy 
                  };
+                 // Invalidate bbox and path2d
+                 el.bbox = null;
+                 el.path2d = null;
               }
             } else if (dragContext.current.type === 'scale') {
                const origW = dragContext.current.gMaxX - dragContext.current.gMinX;

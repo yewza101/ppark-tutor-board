@@ -28,7 +28,9 @@ router.post('/login', async (req, res) => {
   }
 
   const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
+    { id: user.id, username: user.username, role: user.role,
+      group_name: user.group_name
+    },
     JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -38,7 +40,8 @@ router.post('/login', async (req, res) => {
     user: {
       id: user.id,
       username: user.username,
-      role: user.role
+      role: user.role,
+      group_name: user.group_name
     }
   });
 });
@@ -72,7 +75,9 @@ router.post('/login-teacher', async (req, res) => {
   }
 
   const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
+    { id: user.id, username: user.username, role: user.role,
+      group_name: user.group_name
+    },
     JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -82,7 +87,8 @@ router.post('/login-teacher', async (req, res) => {
     user: {
       id: user.id,
       username: user.username,
-      role: user.role
+      role: user.role,
+      group_name: user.group_name
     }
   });
 });

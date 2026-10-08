@@ -21,8 +21,13 @@ const GlobalVoiceWidget = () => {
   let currentGroup = searchParams.get('group');
   if (!currentGroup && location.pathname.startsWith('/monitor/')) {
     currentGroup = location.pathname.split('/monitor/')[1];
+  } else if (!currentGroup && location.pathname.startsWith('/board/teacher_board_')) {
+    currentGroup = location.pathname.split('/board/teacher_board_')[1];
+  } else if (!currentGroup && user?.role !== 'admin' && user?.group_name) {
+    currentGroup = user.group_name;
   }
-  const voiceRoomId = currentGroup ? `voice_group_${currentGroup}` : 'voice_global';
+  
+  const voiceRoomId = currentGroup ? `voice_group_${currentGroup}` : (user?.role === 'admin' ? `voice_teacher_${user.username}` : 'voice_global');
   const activeVoiceRoomIdRef = useRef(voiceRoomId);
 
   const localStreamRef = useRef(null);

@@ -271,12 +271,20 @@ const AdminDashboard = () => {
                             </span>
                           )}
                         </div>
-                        <button
-                          onClick={() => navigate(`/monitor/${encodeURIComponent(groupName)}`)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors"
-                        >
-                          <ExternalLink size={16} /> Monitor Group
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => navigate('/board/teacher_board_' + encodeURIComponent(groupName))}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            Teacher Board
+                          </button>
+                          <button
+                            onClick={() => navigate(`/monitor/${encodeURIComponent(groupName)}`)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            <ExternalLink size={16} /> Monitor Group
+                          </button>
+                        </div>
                       </div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">

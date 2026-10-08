@@ -161,16 +161,27 @@ io.on('connection', (socket) => {
   });
 
   socket.on('broadcast-elements', async (data) => {
-    // Broadcast elements to all active student boards
-    const activeBoards = Object.keys(studentConnectionCount);
+    let activeBoards = Object.keys(studentConnectionCount);
+    
+    if (data.group) {
+        const supabase = require('./db/database');
+        const { data: students } = await supabase.from('users').select('id').eq('group_name', data.group);
+        if (students) {
+           const studentIds = students.map(s => String(s.id));
+           activeBoards = activeBoards.filter(b => studentIds.includes(b));
+        }
+    }
+
     for (const boardId of activeBoards) {
       if (boardId === 'teacher_board') continue;
+      if (boardId.startsWith('teacher_board_')) continue;
       
       const elements = await getBoardState(boardId);
-      // Give them new unique IDs to avoid conflicts? No, it's fine, IDs can be same across different boards, but better to generate new ones if needed. The frontend can just pass them.
       elements.push(...data.elements);
       saveBoardState(boardId);
       socket.to(`board_${boardId}`).emit('add-elements', { elements: data.elements });
+    }
+  });
     }
   });
 

@@ -206,6 +206,7 @@ const simplifyPath = (points, tolerance = 5) => {
     return [points[0], points[end]];
 };
 
+
 const recognizeShape = (pts) => {
     if (pts.length < 10) return null;
     
@@ -216,28 +217,32 @@ const recognizeShape = (pts) => {
     
     const simplified = simplifyPath(pts, 15);
     
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    pts.forEach(p => {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    });
+    const w = maxX - minX, h = maxY - minY;
+    const cx = minX + w/2, cy = minY + h/2;
+    
     if (isClosed) {
-        // Circle vs Poly
         if (simplified.length < 4) return null; 
-        if (simplified.length === 4) return { type: 'triangle', points: simplified.slice(0, 3) };
+        if (simplified.length === 4) return { type: 'triangle', points: [{x: cx, y: minY}, {x: maxX, y: maxY}, {x: minX, y: maxY}] };
         if (simplified.length === 5) {
-            // Check if it's rectangle-like (angles ~90)
-            return { type: 'rectangle', points: simplified.slice(0, 4) };
+            return { type: 'rectangle', points: [{x: minX, y: minY}, {x: maxX, y: minY}, {x: maxX, y: maxY}, {x: minX, y: maxY}] };
         }
-        // If many points, probably circle
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        pts.forEach(p => {
-            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
-        });
-        const w = maxX - minX, h = maxY - minY;
-        const cx = minX + w/2, cy = minY + h/2;
         const r = (w + h) / 4;
         return { type: 'circle', x: cx, y: cy, r };
     } else {
-        // Line vs Angle
-        if (simplified.length === 2) return { type: 'line', points: simplified };
-        if (simplified.length === 3) return { type: 'angle', points: simplified };
+        if (simplified.length === 2) return { type: 'line', points: [pts[0], pts[pts.length-1]] };
+        if (simplified.length === 3) {
+            let maxDist = 0; let corner = pts[1];
+            for (let i = 1; i < pts.length - 1; i++) {
+                const d = distancePointToLine(pts[i], pts[0], pts[pts.length-1]);
+                if (d > maxDist) { maxDist = d; corner = pts[i]; }
+            }
+            return { type: 'angle', points: [pts[0], corner, pts[pts.length-1]] };
+        }
         return null;
     }
 };

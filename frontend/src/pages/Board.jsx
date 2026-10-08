@@ -589,6 +589,31 @@ const Board = () => {
       });
     });
 
+    newSocket.on('connect', () => {
+      console.log('Socket connected/reconnected');
+      newSocket.emit('join-board', { boardId: studentId, role: user?.role || 'student' });
+      
+      // Request full canvas state in case we missed events while disconnected
+      axios.get(`${API_URL}/api/board/${studentId}`)
+        .then(res => {
+          if (res.data) {
+            setElements(res.data);
+            if (fullRedrawRef.current) fullRedrawRef.current();
+          }
+        })
+        .catch(err => console.error('Error fetching board state on reconnect:', err));
+    });
+
+    newSocket.on('add-elements', (data) => {
+        setElements(prev => {
+            const newElements = [...prev, ...data.elements];
+            setPastStates(p => [...p, prev]);
+            setFutureStates([]);
+            return newElements;
+        });
+        if (fullRedrawRef.current) fullRedrawRef.current();
+    });
+
     newSocket.on('draw-progress', (data) => {
       if (data.path === null) {
         delete remotePaths.current[data.socketId];

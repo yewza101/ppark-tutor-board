@@ -48,8 +48,10 @@ const GlobalVoiceWidget = () => {
     if (!user) return;
     const newSocket = io(API_URL);
     setSocket(newSocket);
-    // Initial join
-    newSocket.emit('join-board', { boardId: voiceRoomId, role: user.role });
+    
+    newSocket.on('connect', () => {
+        newSocket.emit('join-board', { boardId: voiceRoomId, role: user.role });
+    });
     return () => newSocket.disconnect();
   }, [user]);
 

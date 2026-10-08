@@ -2,23 +2,30 @@ const supabase = require('./db/database');
 
 const boardStates = {};
 const saveTimeouts = {};
+const loadingPromises = {};
 
 const getBoardState = async (boardId) => {
     if (!boardStates[boardId]) {
       if (boardId === 'teacher_board') {
           boardStates[boardId] = [];
       } else {
-          const { data: board } = await supabase.from('boards').select('canvas_data').eq('user_id', boardId).single();
-          let parsed = [];
-          if (board?.canvas_data) {
-              try {
-                  parsed = JSON.parse(board.canvas_data);
-                  if (typeof parsed === 'string') parsed = JSON.parse(parsed); // Double encode fix
-              } catch(e) {
-                  console.error('Error parsing canvas data for board:', boardId, e);
-              }
+          if (!loadingPromises[boardId]) {
+              loadingPromises[boardId] = (async () => {
+                  const { data: board } = await supabase.from('boards').select('canvas_data').eq('user_id', boardId).single();
+                  let parsed = [];
+                  if (board?.canvas_data) {
+                      try {
+                          parsed = JSON.parse(board.canvas_data);
+                          if (typeof parsed === 'string') parsed = JSON.parse(parsed); // Double encode fix
+                      } catch(e) {
+                          console.error('Error parsing canvas data for board:', boardId, e);
+                      }
+                  }
+                  boardStates[boardId] = Array.isArray(parsed) ? parsed : [];
+                  delete loadingPromises[boardId];
+              })();
           }
-          boardStates[boardId] = Array.isArray(parsed) ? parsed : [];
+          await loadingPromises[boardId];
       }
     }
     return boardStates[boardId];

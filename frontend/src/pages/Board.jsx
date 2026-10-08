@@ -75,7 +75,58 @@ const isPointInElement = (pt, el, radius) => {
     checkPt = rotatePoint(pt.x, pt.y, cx, cy, -el.rotation);
   }
   
-  if (el.type === 'path') {
+  
+      if (el.type === 'polygon' || el.type === 'polyline' || el.isSnapped || el.isSnappedAngle) {
+          ctx.beginPath();
+          if (el.points && el.points.length > 0) {
+              ctx.moveTo(el.points[0].x, el.points[0].y);
+              for (let i = 1; i < el.points.length; i++) {
+                  if (el.points[i]) ctx.lineTo(el.points[i].x, el.points[i].y);
+              }
+              if (el.type === 'polygon') ctx.closePath();
+              ctx.stroke();
+          }
+          
+          // Draw angles
+          if (el.type === 'polygon' || el.isSnappedAngle) {
+             const getAngle = (p1, p2, p3) => {
+                 const a = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                 const b = Math.hypot(p2.x - p3.x, p2.y - p3.y);
+                 const c = Math.hypot(p3.x - p1.x, p3.y - p1.y);
+                 return Math.acos((a*a + b*b - c*c) / (2 * a * b)) * (180 / Math.PI);
+             };
+             ctx.fillStyle = '#ef4444';
+             ctx.font = '14px sans-serif';
+             const pts = el.points.filter(p => p);
+             const len = pts.length;
+             for (let i = 0; i < len; i++) {
+                 let prev = pts[(i - 1 + len) % len];
+                 let curr = pts[i];
+                 let next = pts[(i + 1) % len];
+                 if (el.type !== 'polygon' && (i === 0 || i === len - 1)) continue;
+                 const angle = getAngle(prev, curr, next);
+                 if (!isNaN(angle)) {
+                     ctx.fillText(Math.round(angle) + '°', curr.x + 15, curr.y + 15);
+                 }
+             }
+          }
+          ctx.restore();
+          return;
+      }
+      
+          if (el.type === 'polygon' || el.type === 'polyline' || el.isSnapped || el.isSnappedAngle) {
+      if (!el.points || el.points.length < 2) return false;
+      const pt = { x, y };
+      for (let i = 0; i < el.points.length; i++) {
+         const p1 = el.points[i];
+         const p2 = el.points[(i + 1) % el.points.length];
+         if (el.type !== 'polygon' && i === el.points.length - 1) break;
+         if (distancePointToSegment(pt, p1, p2) <= padding + (el.size||5)/2) return true;
+      }
+      return false;
+    }
+    
+    if (el.type === 'path') {
     if (!el.points || el.points.length === 0) return false;
     for (let i = 0; i < el.points.length - 1; i++) {
       if (el.points[i] !== null && el.points[i+1] !== null) {
@@ -135,8 +186,8 @@ const isPointInPolygon = (point, vs) => {
 
 const getElementBoundingBox = (el) => {
   let minX, minY, maxX, maxY;
-  if (el.type === 'path') {
-     if (el.bbox) {
+  if (el.type === 'path' || el.type === 'polygon' || el.type === 'polyline' || el.isSnapped || el.isSnappedAngle) {
+     if (el.bbox && el.type === 'path') {
          minX = el.bbox.minX; minY = el.bbox.minY; maxX = el.bbox.maxX; maxY = el.bbox.maxY;
      } else {
          const validPoints = el.points ? el.points.filter(p => p !== null) : [];
@@ -145,7 +196,7 @@ const getElementBoundingBox = (el) => {
          minY = Math.min(...validPoints.map(p => p.y));
          maxX = Math.max(...validPoints.map(p => p.x));
          maxY = Math.max(...validPoints.map(p => p.y));
-         el.bbox = { minX, minY, maxX, maxY };
+         if (el.type === 'path') el.bbox = { minX, minY, maxX, maxY };
      }
   } else if (el.type === 'line') {
      minX = Math.min(el.x1, el.x2);
@@ -351,6 +402,48 @@ const Board = () => {
   
   // Drawing state
   const isDrawing = useRef(false);
+
+  const snapShapeTimeoutRef = useRef(null);
+
+  const performSmartSnap = () => {
+    if (!isDrawing.current || !currentPath.current) return;
+    if (currentPath.current.tool !== 'pencil' && currentPath.current.tool !== 'highlighter') return;
+    const pts = currentPath.current.points.filter(p => p !== null);
+    if (pts.length < 10) return;
+    
+    const start = pts[0];
+    const end = pts[pts.length - 1];
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (length < 20) return; 
+    
+    const distancePointToLine = (p, l1, l2) => {
+        const num = Math.abs((l2.y - l1.y)*p.x - (l2.x - l1.x)*p.y + l2.x*l1.y - l2.y*l1.x);
+        const den = Math.hypot(l2.y - l1.y, l2.x - l1.x);
+        return den === 0 ? Math.hypot(p.x - l1.x, p.y - l1.y) : num / den;
+    };
+
+    let maxDist = 0;
+    let cornerIdx = -1;
+    for (let i = 1; i < pts.length - 1; i++) {
+        const d = distancePointToLine(pts[i], start, end); 
+        if (d > maxDist) {
+            maxDist = d;
+            cornerIdx = i;
+        }
+    }
+    
+    if (maxDist < length * 0.15 || maxDist < 25) {
+        currentPath.current.points = [start, end];
+        currentPath.current.isSnapped = true;
+    } else {
+        const corner = pts[cornerIdx];
+        currentPath.current.points = [start, corner, end];
+        currentPath.current.isSnappedAngle = true;
+    }
+    currentPath.current.path2d = null;
+    if (redrawDraftRef.current) redrawDraftRef.current();
+  };
+
   const currentPath = useRef(null);
   const startPoint = useRef(null);
   const activePointerId = useRef(null);
@@ -431,6 +524,17 @@ const Board = () => {
         setFutureStates([]);
         return updatedElements;
       });
+    });
+
+    newSocket.on('add-elements', (data) => {
+      setElements(prev => {
+        const newElsToAdd = data.elements.map(el => ({...el, id: generateId()}));
+        const newEls = [...prev, ...newElsToAdd];
+        elementsRef.current = newEls;
+        setPastStates(p => [...p, prev]);
+        return newEls;
+      });
+      if (fullRedrawRef.current) fullRedrawRef.current();
     });
 
     newSocket.on('draw-progress', (data) => {
@@ -904,9 +1008,24 @@ const Board = () => {
         }
         
         let isSpecialSingle = false;
-        if (selectedElementIds.length === 1) {
+                if (selectedElementIds.length === 1) {
             ctx.setLineDash([]);
             const el = elementsRef.current.find(e => e.id === selectedElementIds[0]);
+            
+            if (el && el.type === 'polygon') {
+                isSpecialSingle = true;
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                const hs = 6 / zoom;
+                el.points.forEach(pt => {
+                    ctx.beginPath();
+                    ctx.arc(pt.x, pt.y, hs, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.stroke();
+                });
+                ctx.restore();
+            }
+            
             if (el && (el.type === 'image' || el.type === 'math' || el.type === 'rectangle')) {
                 isSpecialSingle = true;
                 const cx = el.x + el.w / 2;
@@ -1119,6 +1238,27 @@ const Board = () => {
         
         if (selectedElementIds.length === 1) {
             const el = elementsRef.current.find(e => e.id === selectedElementIds[0]);
+            if (el && el.type === 'polygon') {
+                const hs = 25 / zoom;
+                let clickedVertex = -1;
+                let localPos = pos;
+                for (let i = 0; i < el.points.length; i++) {
+                    if (Math.hypot(localPos.x - el.points[i].x, localPos.y - el.points[i].y) <= hs) {
+                        clickedVertex = i;
+                        break;
+                    }
+                }
+                if (clickedVertex !== -1) {
+                    dragContext.current = {
+                        type: 'vertex', vertexIndex: clickedVertex,
+                        origElements: [JSON.parse(JSON.stringify(el))]
+                    };
+                    startPoint.current = { x: e.clientX, y: e.clientY };
+                    isDrawing.current = true;
+                    e.target.setPointerCapture(e.pointerId);
+                    return;
+                }
+            }
             if (el && (el.type === 'image' || el.type === 'math' || el.type === 'rectangle')) {
                 let localPos = pos;
                 if (el.rotation) {
@@ -1305,7 +1445,7 @@ const Board = () => {
     }
   };
 
-  const erasePixel = (pos) => {
+  const erasePixel = (pos, shouldEmit = true) => {
     let changed = false;
     
     for (let j = 0; j < elementsRef.current.length; j++) {
@@ -1344,7 +1484,7 @@ const Board = () => {
         
         if (pathMutated) {
             changed = true;
-            if (socket && socket.id) socket.emit('update-element', { boardId: studentId, element: el });
+            if (socket && socket.id && shouldEmit) socket.emit('update-element', { boardId: studentId, element: el });
         }
       }
     }
@@ -1359,7 +1499,7 @@ const Board = () => {
   };
 
   const checkObjectEraserCollision = (pos) => {
-    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && el.type !== 'image' && el.type !== 'path' && isPointInElement(pos, el, brushSize));
+    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && el.type !== 'image' && isPointInElement(pos, el, brushSize));
     if (elIdx !== -1) {
       const deletedEl = elementsRef.current[elIdx];
       if (deletedEl.id) {
@@ -1549,6 +1689,13 @@ const Board = () => {
                    el.y1 = origEl.y1 + dy;
                  }
               }
+                        } else if (dragContext.current.type === 'vertex') {
+              if (el.type === 'polygon') {
+                 el.points[dragContext.current.vertexIndex] = { 
+                     x: origEl.points[dragContext.current.vertexIndex].x + dx, 
+                     y: origEl.points[dragContext.current.vertexIndex].y + dy 
+                 };
+              }
             } else if (dragContext.current.type === 'scale') {
                const origW = dragContext.current.gMaxX - dragContext.current.gMinX;
                const newW = Math.max(20, origW + dx);
@@ -1649,22 +1796,35 @@ const Board = () => {
                  x: lastEraserPos.current.x + (pos.x - lastEraserPos.current.x) * (i / steps),
                  y: lastEraserPos.current.y + (pos.y - lastEraserPos.current.y) * (i / steps)
              };
-             erasePixel(interpPos);
+             const isLastStep = i === steps;
+             erasePixel(interpPos, isLastStep && shouldEmit);
              checkObjectEraserCollision(interpPos);
           }
       } else {
-          erasePixel(pos);
+          erasePixel(pos, shouldEmit);
           checkObjectEraserCollision(pos);
       }
       lastEraserPos.current = pos;
+      if (shouldEmit) lastEmitTime.current = now;
       return;
     }
 
     if (!currentPath.current) return;
 
     if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser' || currentTool === 'highlighter') {
-      currentPath.current.points.push(pos);
-      currentPath.current.path2d = null; // Invalidate cached path
+      if (currentPath.current && currentPath.current.isSnapped) {
+          currentPath.current.points[currentPath.current.points.length - 1] = pos;
+      } else if (currentPath.current && currentPath.current.isSnappedAngle) {
+          currentPath.current.points[2] = pos;
+      } else {
+          currentPath.current.points.push(pos);
+      }
+      currentPath.current.path2d = null; 
+      
+      if (currentTool === 'pencil' || currentTool === 'highlighter') {
+          if (snapShapeTimeoutRef.current) clearTimeout(snapShapeTimeoutRef.current);
+          snapShapeTimeoutRef.current = setTimeout(() => performSmartSnap(), 500);
+      }
     } else if (currentTool === 'line') {
       currentPath.current.x2 = pos.x;
       currentPath.current.y2 = pos.y;
@@ -1942,10 +2102,21 @@ const Board = () => {
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
             const existingPages = elementsRef.current.filter(el => el.isPage);
-            let currentY = existingPages.length > 0 
-                ? Math.max(...existingPages.map(el => el.y + el.h)) + 40 
-                : 0;
+            const imgWidth = 800; // Fixed reasonable width on canvas
+            let currentY = 0;
+            let startX = -(imgWidth / 2);
+            
+            if (existingPages.length > 0) {
+                let maxPage = existingPages[0];
+                for (const p of existingPages) {
+                    if (p.y > maxPage.y) maxPage = p;
+                }
+                currentY = maxPage.y + maxPage.h + 40;
+                startX = maxPage.x;
+            }
+            
             const newElements = [];
             
             for (let i = 1; i <= pdf.numPages; i++) {
@@ -1982,7 +2153,7 @@ const Board = () => {
                     isPage: true,
                     locked: true,
                     url: publicUrl,
-                    x: -(imgWidth / 2),
+                    x: startX,
                     y: currentY,
                     w: imgWidth,
                     h: imgHeight
@@ -2003,6 +2174,11 @@ const Board = () => {
                     if (typeof emitCanvasUpdate === 'function') emitCanvasUpdate(newEls);
                     return newEls;
                 });
+                
+                if (socket && user?.role === 'admin' && studentId === 'teacher_board') {
+                    socket.emit('broadcast-elements', { elements: newElements });
+                }
+                
                 // Reset pan and zoom to center the document
                 setZoom(1);
                 setPan(clampPan((window.innerWidth / 2) - 400, 50, 1));
@@ -2045,6 +2221,9 @@ const Board = () => {
         if (fullRedrawRef.current) fullRedrawRef.current();
         if (socket && socket.id) {
           socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+          if (user?.role === 'admin' && studentId === 'teacher_board') {
+              socket.emit('broadcast-elements', { elements: [newEl] });
+          }
         }
       };
       img.src = publicUrl;

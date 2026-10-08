@@ -160,6 +160,20 @@ io.on('connection', (socket) => {
     saveBoardState(data.boardId);
   });
 
+  socket.on('broadcast-elements', async (data) => {
+    // Broadcast elements to all active student boards
+    const activeBoards = Object.keys(studentConnectionCount);
+    for (const boardId of activeBoards) {
+      if (boardId === 'teacher_board') continue;
+      
+      const elements = await getBoardState(boardId);
+      // Give them new unique IDs to avoid conflicts? No, it's fine, IDs can be same across different boards, but better to generate new ones if needed. The frontend can just pass them.
+      elements.push(...data.elements);
+      saveBoardState(boardId);
+      socket.to(`board_${boardId}`).emit('add-elements', { elements: data.elements });
+    }
+  });
+
   socket.on('cursor-move', (data) => {
     // data = { boardId, username, x, y, color }
     socket.to(`board_${data.boardId}`).emit('cursor-move', { ...data, socketId: socket.id });

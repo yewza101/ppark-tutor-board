@@ -1379,7 +1379,7 @@ const Board = () => {
         
         if (selectedElementIds.length === 1) {
             const el = elementsRef.current.find(e => e.id === selectedElementIds[0]);
-            if (el && el.type === 'polygon') {
+            if (el && (el.type === 'polygon' || el.isSnappedAngle || el.isSnapped || el.type === 'polyline' || el.type === 'path')) {
                 const hs = 25 / zoom;
                 let clickedVertex = -1;
                 let localPos = pos;
@@ -1818,7 +1818,7 @@ const Board = () => {
                   }
               });
             } else if (dragContext.current.type === 'move') {
-              if (el.type === 'path') {
+              if (el.type === 'path' || el.type === 'polygon' || el.type === 'polyline') {
                  el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { x: origEl.points[i].x + dx, y: origEl.points[i].y + dy }));
                  el.bbox = null;
                  el.path2d = null;

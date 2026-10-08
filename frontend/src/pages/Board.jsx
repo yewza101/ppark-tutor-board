@@ -76,59 +76,7 @@ const isPointInElement = (pt, el, radius) => {
   }
   
   
-      if (el.type === 'polygon' || el.type === 'polyline' || el.isSnapped || el.isSnappedAngle) {
-          ctx.beginPath();
-          if (el.points && el.points.length > 0) {
-              ctx.moveTo(el.points[0].x, el.points[0].y);
-              for (let i = 1; i < el.points.length; i++) {
-                  if (el.points[i]) ctx.lineTo(el.points[i].x, el.points[i].y);
-              }
-              if (el.type === 'polygon') ctx.closePath();
-              ctx.stroke();
-          }
-          
-          if (el.type === 'polygon' || el.isSnappedAngle) {
-             ctx.fillStyle = '#ef4444';
-             ctx.font = '16px sans-serif';
-             const pts = el.points.filter(p => p);
-             const len = pts.length;
-             for (let i = 0; i < len; i++) {
-                 let prev = pts[(i - 1 + len) % len];
-                 let curr = pts[i];
-                 let next = pts[(i + 1) % len];
-                 if (el.type !== 'polygon' && (i === 0 || i === len - 1)) continue;
-                 const angle = getAngle(prev, curr, next);
-                 if (!isNaN(angle)) {
-                     const deg = Math.round(angle * (180 / Math.PI));
-                     ctx.fillText(deg + '°', curr.x + 10, curr.y + 10);
-                 }
-             }
-          }
-          ctx.restore();
-          return;
-      }
-      
-      if (el.type === 'triangle') {
-        ctx.beginPath();
-        const p1 = {x: el.x + el.w / 2, y: el.y};
-        const p2 = {x: el.x + el.w, y: el.y + el.h};
-        const p3 = {x: el.x, y: el.y + el.h};
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.lineTo(p3.x, p3.y);
-        ctx.closePath();
-        ctx.stroke();
-        
-        ctx.fillStyle = '#ef4444'; ctx.font = '16px sans-serif';
-        const a1 = getAngle(p3, p1, p2) * (180/Math.PI);
-        const a2 = getAngle(p1, p2, p3) * (180/Math.PI);
-        const a3 = getAngle(p2, p3, p1) * (180/Math.PI);
-        if (!isNaN(a1)) ctx.fillText(Math.round(a1) + '°', p1.x - 10, p1.y + 25);
-        if (!isNaN(a2)) ctx.fillText(Math.round(a2) + '°', p2.x - 30, p2.y - 10);
-        if (!isNaN(a3)) ctx.fillText(Math.round(a3) + '°', p3.x + 10, p3.y - 10);
-      }
-      
-      if (el.type === 'path') {
+  if (el.type === 'path') {
     if (!el.points || el.points.length === 0) return false;
     for (let i = 0; i < el.points.length - 1; i++) {
       if (el.points[i] !== null && el.points[i+1] !== null) {
@@ -764,6 +712,58 @@ const Board = () => {
         }
         ctx.setLineDash([]);
         return;
+      }
+      
+      
+      if (el.type === 'polygon' || el.type === 'polyline' || el.isSnapped || el.isSnappedAngle) {
+          ctx.beginPath();
+          if (el.points && el.points.length > 0) {
+              ctx.moveTo(el.points[0].x, el.points[0].y);
+              for (let i = 1; i < el.points.length; i++) {
+                  if (el.points[i]) ctx.lineTo(el.points[i].x, el.points[i].y);
+              }
+              if (el.type === 'polygon') ctx.closePath();
+              ctx.stroke();
+          }
+          
+          if (el.type === 'polygon' || el.isSnappedAngle) {
+             ctx.fillStyle = '#ef4444';
+             ctx.font = '16px sans-serif';
+             const pts = el.points.filter(p => p);
+             const len = pts.length;
+             for (let i = 0; i < len; i++) {
+                 let prev = pts[(i - 1 + len) % len];
+                 let curr = pts[i];
+                 let next = pts[(i + 1) % len];
+                 if (el.type !== 'polygon' && (i === 0 || i === len - 1)) continue;
+                 const angle = getAngle(prev, curr, next);
+                 if (!isNaN(angle)) {
+                     const deg = Math.round(angle * (180 / Math.PI));
+                     ctx.fillText(deg + '°', curr.x + 10, curr.y + 10);
+                 }
+             }
+          }
+          ctx.restore();
+          return;
+      }
+      if (el.type === 'triangle') {
+        ctx.beginPath();
+        const p1 = {x: el.x + el.w / 2, y: el.y};
+        const p2 = {x: el.x + el.w, y: el.y + el.h};
+        const p3 = {x: el.x, y: el.y + el.h};
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.lineTo(p3.x, p3.y);
+        ctx.closePath();
+        ctx.stroke();
+        
+        ctx.fillStyle = '#ef4444'; ctx.font = '16px sans-serif';
+        const a1 = getAngle(p3, p1, p2) * (180/Math.PI);
+        const a2 = getAngle(p1, p2, p3) * (180/Math.PI);
+        const a3 = getAngle(p2, p3, p1) * (180/Math.PI);
+        if (!isNaN(a1)) ctx.fillText(Math.round(a1) + '°', p1.x - 10, p1.y + 25);
+        if (!isNaN(a2)) ctx.fillText(Math.round(a2) + '°', p2.x - 30, p2.y - 10);
+        if (!isNaN(a3)) ctx.fillText(Math.round(a3) + '°', p3.x + 10, p3.y - 10);
       }
       
       if (el.type === 'path') {

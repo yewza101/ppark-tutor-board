@@ -2089,7 +2089,23 @@ const Board = () => {
     }
 
     if (isDrawing.current && currentPath.current) {
-      const stroke = currentPath.current;
+      let stroke = currentPath.current;
+      
+      // Convert tool-drawn rectangle and triangle to polygon for editable vertices
+      if (stroke.type === 'rectangle') {
+         stroke = { ...stroke, type: 'polygon', points: [
+             {x: stroke.x, y: stroke.y},
+             {x: stroke.x + stroke.w, y: stroke.y},
+             {x: stroke.x + stroke.w, y: stroke.y + stroke.h},
+             {x: stroke.x, y: stroke.y + stroke.h}
+         ] };
+      } else if (stroke.type === 'triangle') {
+         stroke = { ...stroke, type: 'polygon', points: [
+             {x: stroke.x + stroke.w / 2, y: stroke.y},
+             {x: stroke.x + stroke.w, y: stroke.y + stroke.h},
+             {x: stroke.x, y: stroke.y + stroke.h}
+         ] };
+      }
       
       // Don't save laser strokes to the permanent board elements
       // Don't save laser strokes to the permanent board elements

@@ -64,6 +64,49 @@ const distancePointToSegment = (p, v, w) => {
   return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
 };
 
+
+const drawAngleGuides = (ctx, el) => {
+    if (!el) return;
+    ctx.save();
+    ctx.fillStyle = '#ef4444';
+    ctx.font = '16px sans-serif';
+    
+    if (el.type === 'polygon' || el.isSnappedAngle) {
+         const pts = el.points.filter(p => p);
+         const len = pts.length;
+         for (let i = 0; i < len; i++) {
+             let prev = pts[(i - 1 + len) % len];
+             let curr = pts[i];
+             let next = pts[(i + 1) % len];
+             if (el.type !== 'polygon' && (i === 0 || i === len - 1)) continue;
+             const angle = getAngle(prev, curr, next);
+             if (!isNaN(angle)) {
+                 const deg = Math.round(angle * (180 / Math.PI));
+                 ctx.fillText(deg + '°', curr.x + 10, curr.y + 10);
+             }
+         }
+    } else if (el.type === 'line') {
+        const a = Math.atan2((el.y2||0) - (el.y1||0), (el.x2||0) - (el.x1||0)) * (180/Math.PI);
+        ctx.fillText(Math.round(Math.abs(a)) + '°', (el.x2||0) + 10, (el.y2||0) + 10);
+    } else if (el.type === 'rectangle') {
+        ctx.fillText('90°', el.x + 10, el.y + 20);
+        ctx.fillText('90°', el.x + el.w - 30, el.y + 20);
+        ctx.fillText('90°', el.x + 10, el.y + el.h - 10);
+        ctx.fillText('90°', el.x + el.w - 30, el.y + el.h - 10);
+    } else if (el.type === 'triangle') {
+        const p1 = {x: el.x + el.w / 2, y: el.y};
+        const p2 = {x: el.x + el.w, y: el.y + el.h};
+        const p3 = {x: el.x, y: el.y + el.h};
+        const a1 = getAngle(p3, p1, p2) * (180/Math.PI);
+        const a2 = getAngle(p1, p2, p3) * (180/Math.PI);
+        const a3 = getAngle(p2, p3, p1) * (180/Math.PI);
+        if (!isNaN(a1)) ctx.fillText(Math.round(a1) + '°', p1.x - 10, p1.y + 25);
+        if (!isNaN(a2)) ctx.fillText(Math.round(a2) + '°', p2.x - 30, p2.y - 10);
+        if (!isNaN(a3)) ctx.fillText(Math.round(a3) + '°', p3.x + 10, p3.y - 10);
+    }
+    ctx.restore();
+};
+
 const isPointInElement = (pt, el, radius) => {
   if (el.tool === 'eraser') return false;
   const hitRadius = radius + (el.size ? el.size / 2 : 5);
@@ -725,25 +768,7 @@ const Board = () => {
               if (el.type === 'polygon') ctx.closePath();
               ctx.stroke();
           }
-          
-          if (el.type === 'polygon' || el.isSnappedAngle) {
-             ctx.fillStyle = '#ef4444';
-             ctx.font = '16px sans-serif';
-             const pts = el.points.filter(p => p);
-             const len = pts.length;
-             for (let i = 0; i < len; i++) {
-                 let prev = pts[(i - 1 + len) % len];
-                 let curr = pts[i];
-                 let next = pts[(i + 1) % len];
-                 if (el.type !== 'polygon' && (i === 0 || i === len - 1)) continue;
-                 const angle = getAngle(prev, curr, next);
-                 if (!isNaN(angle)) {
-                     const deg = Math.round(angle * (180 / Math.PI));
-                     ctx.fillText(deg + '°', curr.x + 10, curr.y + 10);
-                 }
-             }
-          }
-          ctx.restore();
+                    ctx.restore();
           return;
       }
       if (el.type === 'triangle') {
@@ -756,15 +781,7 @@ const Board = () => {
         ctx.lineTo(p3.x, p3.y);
         ctx.closePath();
         ctx.stroke();
-        
-        ctx.fillStyle = '#ef4444'; ctx.font = '16px sans-serif';
-        const a1 = getAngle(p3, p1, p2) * (180/Math.PI);
-        const a2 = getAngle(p1, p2, p3) * (180/Math.PI);
-        const a3 = getAngle(p2, p3, p1) * (180/Math.PI);
-        if (!isNaN(a1)) ctx.fillText(Math.round(a1) + '°', p1.x - 10, p1.y + 25);
-        if (!isNaN(a2)) ctx.fillText(Math.round(a2) + '°', p2.x - 30, p2.y - 10);
-        if (!isNaN(a3)) ctx.fillText(Math.round(a3) + '°', p3.x + 10, p3.y - 10);
-      }
+              }
       
       if (el.type === 'path') {
         if (el.points && el.points.length > 0) {
@@ -814,17 +831,11 @@ const Board = () => {
         ctx.lineTo(el.x2 || 0, el.y2 || 0);
         ctx.stroke();
         
-        const a = Math.atan2((el.y2||0) - (el.y1||0), (el.x2||0) - (el.x1||0)) * (180/Math.PI);
-        ctx.fillStyle = '#ef4444'; ctx.font = '16px sans-serif';
-        ctx.fillText(Math.round(Math.abs(a)) + '°', (el.x2||0) + 10, (el.y2||0) + 10);
+
       } else if (el.type === 'rectangle') {
         ctx.strokeRect(el.x, el.y, el.w, el.h);
         
-        ctx.fillStyle = '#ef4444'; ctx.font = '16px sans-serif';
-        ctx.fillText('90°', el.x + 10, el.y + 20);
-        ctx.fillText('90°', el.x + el.w - 30, el.y + 20);
-        ctx.fillText('90°', el.x + 10, el.y + el.h - 10);
-        ctx.fillText('90°', el.x + el.w - 30, el.y + el.h - 10);
+
       } else if (el.type === 'circle') {
         const r = Math.sqrt(Math.pow(el.w || 0, 2) + Math.pow(el.h || 0, 2));
         ctx.arc(el.x || 0, el.y || 0, r, 0, 2 * Math.PI);
@@ -1096,9 +1107,12 @@ const Board = () => {
         }
         
         let isSpecialSingle = false;
-                if (selectedElementIds.length === 1) {
+        
+        if (selectedElementIds.length === 1) {
             ctx.setLineDash([]);
             const el = elementsRef.current.find(e => e.id === selectedElementIds[0]);
+            drawAngleGuides(ctx, el);
+
             
             
             if (el && el.type === 'circle') {
@@ -1120,7 +1134,7 @@ const Board = () => {
                 
                 ctx.restore();
             }
-            if (el && el.type === 'polygon') {
+            if (el && (el.type === 'polygon' || el.isSnappedAngle || el.isSnapped)) {
                 isSpecialSingle = true;
                 ctx.save();
                 ctx.fillStyle = '#ffffff';
@@ -1134,6 +1148,16 @@ const Board = () => {
                 ctx.restore();
             }
             
+
+            if (el && el.type === 'line') {
+                isSpecialSingle = true;
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                const hs = 8 / zoom;
+                ctx.beginPath(); ctx.arc(el.x1, el.y1, hs, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.arc(el.x2, el.y2, hs, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                ctx.restore();
+            }
             if (el && (el.type === 'image' || el.type === 'math' || el.type === 'rectangle')) {
                 isSpecialSingle = true;
                 const cx = el.x + el.w / 2;
@@ -1807,6 +1831,19 @@ const Board = () => {
                  const newR = Math.max(5, Math.hypot((pos.x - el.x), (pos.y - el.y)));
                  el.w = newR;
                  el.h = 0;
+              }
+
+            } else if (dragContext.current.type === 'line_vertex') {
+              const dx = (pos.x - dragContext.current.startX);
+              const dy = (pos.y - dragContext.current.startY);
+              if (el.type === 'line') {
+                 if (dragContext.current.vertexIndex === 1) {
+                     el.x1 = dragContext.current.origElements[0].x1 + dx;
+                     el.y1 = dragContext.current.origElements[0].y1 + dy;
+                 } else {
+                     el.x2 = dragContext.current.origElements[0].x2 + dx;
+                     el.y2 = dragContext.current.origElements[0].y2 + dy;
+                 }
               }
             } else if (dragContext.current.type === 'vertex') {
               const dx = (pos.x - dragContext.current.startX);

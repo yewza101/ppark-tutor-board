@@ -1379,7 +1379,7 @@ const Board = () => {
         
         if (selectedElementIds.length === 1) {
             const el = elementsRef.current.find(e => e.id === selectedElementIds[0]);
-            if (el && (el.type === 'polygon' || el.isSnappedAngle || el.isSnapped || el.type === 'polyline' || el.type === 'path')) {
+            if (el && (el.type === 'polygon' || el.isSnappedAngle || el.isSnapped || el.type === 'polyline')) {
                 const hs = 25 / zoom;
                 let clickedVertex = -1;
                 let localPos = pos;
@@ -1857,7 +1857,7 @@ const Board = () => {
             } else if (dragContext.current.type === 'vertex') {
               const dx = (pos.x - dragContext.current.startX);
               const dy = (pos.y - dragContext.current.startY);
-              if (el.type === 'polygon' || el.isSnappedAngle || el.isSnapped || el.type === 'path') {
+              if (el.type === 'polygon' || el.isSnappedAngle || el.isSnapped || el.type === 'polyline') {
                  el.points[dragContext.current.vertexIndex] = { 
                      x: dragContext.current.origElements[0].points[dragContext.current.vertexIndex].x + dx, 
                      y: dragContext.current.origElements[0].points[dragContext.current.vertexIndex].y + dy 

@@ -1322,6 +1322,14 @@ const Board = () => {
     if (globalMenuPos) setGlobalMenuPos(null);
     setShowColorPicker(false);
     
+    const nowDown = Date.now();
+    if (activePointers.current.size === 0 && (nowDown - (window.lastTapTime || 0) < 300)) {
+        handleUndo();
+        window.lastTapTime = 0;
+        return;
+    }
+    window.lastTapTime = nowDown;
+
     activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activePointers.current.size === 2) {
         setIsPanning(false);

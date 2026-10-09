@@ -2626,7 +2626,15 @@ const Board = () => {
       setElements([]);
       elementsRef.current = [];
       if (fullRedrawRef.current) fullRedrawRef.current();
-      if (socket) socket.emit('clear-canvas', studentId);
+      if (socket) {
+        if (studentId.startsWith('teacher_board')) {
+            const groupName = decodeURIComponent(studentId.replace('teacher_board_', ''));
+            socket.emit('teacher-clear-room', groupName);
+            socket.emit('clear-canvas', studentId); // Also clear self to be safe
+        } else {
+            socket.emit('clear-canvas', studentId);
+        }
+      }
     }
   };
 

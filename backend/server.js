@@ -132,6 +132,97 @@ io.on('connection', (socket) => {
     boardStates[boardId] = [];
     saveBoardState(boardId);
   });
+  socket.on('teacher-clear-room', async (groupName) => {
+    try {
+      const { createClient } = require('@supabase/supabase-js');
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      
+      const { data: students } = await supabase
+        .from('students')
+        .select('id, group_name');
+        
+      const targetGroup = groupName || 'General';
+      
+      const filteredStudents = (students || []).filter(s => {
+         return (s.group_name || 'General') === targetGroup;
+      });
+      
+      for (const student of filteredStudents) {
+         const sid = String(student.id);
+         boardStates[sid] = [];
+         socket.to(`board_${sid}`).emit('clear-canvas');
+         saveBoardState(sid);
+      }
+      
+      const tbid = `teacher_board_${groupName}`;
+      boardStates[tbid] = [];
+      socket.to(`board_${tbid}`).emit('clear-canvas');
+      saveBoardState(tbid);
+      
+    } catch (err) {
+      console.error('Error clearing room boards:', err);
+    }
+  });
+
+  
+  socket.on('teacher-upload-sheet', async ({ groupName, strokes }) => {
+    try {
+      const { createClient } = require('@supabase/supabase-js');
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      
+      const { data: students } = await supabase
+        .from('students')
+        .select('id, group_name');
+        
+      const targetGroup = groupName || 'General';
+      
+      const filteredStudents = (students || []).filter(s => {
+         return (s.group_name || 'General') === targetGroup;
+      });
+      
+      for (const student of filteredStudents) {
+         const sid = String(student.id);
+         
+         // Clear
+         boardStates[sid] = [];
+         socket.to(`board_${sid}`).emit('clear-canvas');
+         
+         // Add new sheets
+         boardStates[sid] = [...strokes];
+         for (const stroke of strokes) {
+           socket.to(`board_${sid}`).emit('draw-stroke', { boardId: sid, stroke });
+         }
+         saveBoardState(sid);
+      }
+      
+    } catch (err) {
+      console.error('Error syncing sheet to students:', err);
+    }
+  });
+
+      
+      for (const student of filteredStudents) {
+         const sid = String(student.id);
+         
+         // Clear
+         boardStates[sid] = [];
+         socket.to(`board_${sid}`).emit('clear-canvas');
+         
+         // Add new sheet
+         boardStates[sid].push(stroke);
+         socket.to(`board_${sid}`).emit('draw-stroke', { boardId: sid, stroke });
+         saveBoardState(sid);
+      }
+      
+    } catch (err) {
+      console.error('Error syncing sheet to students:', err);
+    }
+  });
+
 
   socket.on('delete-element', async (data) => {
     // data = { boardId, elementId }

@@ -5,6 +5,7 @@ import axios from 'axios';
 import { ArrowLeft, Trash2 } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import Toolbar from '../components/Toolbar';
+import TeacherShortcutBar from '../components/TeacherShortcutBar';
 import { API_URL } from '../config';
 import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -2933,6 +2934,9 @@ const Board = () => {
         </div>
       )}
 
+      
+      <TeacherShortcutBar currentBoardId={studentId} />
+      
       {!isReadonly && (
         <Toolbar 
           currentTool={currentTool} setCurrentTool={setCurrentTool}

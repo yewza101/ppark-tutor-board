@@ -5,9 +5,12 @@ import Board from './pages/Board';
 import GroupMonitor from './pages/GroupMonitor';
 import GlobalVoiceWidget from './components/GlobalVoiceWidget';
 
+import useAuthStore from './store/useAuthStore';
+
 function VoiceWrapper() {
   const location = useLocation();
-  if (location.search.includes('readonly=true')) return null;
+  const { user } = useAuthStore();
+  if (!user || location.search.includes('readonly=true')) return null;
   return <GlobalVoiceWidget />;
 }
 

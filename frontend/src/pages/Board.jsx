@@ -1322,13 +1322,7 @@ const Board = () => {
     if (globalMenuPos) setGlobalMenuPos(null);
     setShowColorPicker(false);
     
-    const nowDown = Date.now();
-    if (activePointers.current.size === 0 && (nowDown - (window.lastTapTime || 0) < 300)) {
-        handleUndo();
-        window.lastTapTime = 0;
-        return;
-    }
-    window.lastTapTime = nowDown;
+
 
     activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activePointers.current.size === 2) {
@@ -1341,6 +1335,10 @@ const Board = () => {
             x: (pts[0].x + pts[1].x) / 2,
             y: (pts[0].y + pts[1].y) / 2
         };
+        
+        window.twoFingerDownTime = Date.now();
+        window.twoFingerMoved = false;
+        
         return;
     }
     
@@ -1681,6 +1679,11 @@ const Board = () => {
         if (isReadonly) return;
         
         if (lastPinchDist.current && lastPinchCenter.current) {
+            if (Math.abs(currentDist - lastPinchDist.current) > 10 || 
+                Math.abs(currentCenter.x - lastPinchCenter.current.x) > 10 || 
+                Math.abs(currentCenter.y - lastPinchCenter.current.y) > 10) {
+                window.twoFingerMoved = true;
+            }
             const zoomDelta = currentDist / lastPinchDist.current;
             
             const dx = currentCenter.x - lastPinchCenter.current.x;
@@ -2029,7 +2032,15 @@ const Board = () => {
   };
 
   const onPointerUp = (e) => {
+    const wasTwoFingers = activePointers.current.size === 2;
     activePointers.current.delete(e.pointerId);
+    
+    if (wasTwoFingers && activePointers.current.size === 1) {
+        if (!window.twoFingerMoved && window.twoFingerDownTime && (Date.now() - window.twoFingerDownTime < 400)) {
+            handleUndo();
+        }
+    }
+    
     if (activePointers.current.size < 2) {
         lastPinchDist.current = null;
         lastPinchCenter.current = null;

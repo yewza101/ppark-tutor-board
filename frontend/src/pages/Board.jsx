@@ -472,6 +472,14 @@ const Board = () => {
   const dragContext = useRef(null);
   
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
+  const toastTimeout = useRef(null);
+  
+  const showToast = (msg) => {
+      setToastMsg(msg);
+      if (toastTimeout.current) clearTimeout(toastTimeout.current);
+      toastTimeout.current = setTimeout(() => setToastMsg(''), 1500);
+  };
   const [dragEndTick, setDragEndTick] = useState(0);
   const [contextMenuPos, setContextMenuPos] = useState(null);
   const [globalMenuPos, setGlobalMenuPos] = useState(null);
@@ -1679,9 +1687,9 @@ const Board = () => {
         if (isReadonly) return;
         
         if (lastPinchDist.current && lastPinchCenter.current) {
-            if (Math.abs(currentDist - lastPinchDist.current) > 10 || 
-                Math.abs(currentCenter.x - lastPinchCenter.current.x) > 10 || 
-                Math.abs(currentCenter.y - lastPinchCenter.current.y) > 10) {
+            if (Math.abs(currentDist - lastPinchDist.current) > 40 || 
+                Math.abs(currentCenter.x - lastPinchCenter.current.x) > 40 || 
+                Math.abs(currentCenter.y - lastPinchCenter.current.y) > 40) {
                 window.twoFingerMoved = true;
             }
             const zoomDelta = currentDist / lastPinchDist.current;
@@ -2036,7 +2044,7 @@ const Board = () => {
     activePointers.current.delete(e.pointerId);
     
     if (wasTwoFingers && activePointers.current.size === 1) {
-        if (!window.twoFingerMoved && window.twoFingerDownTime && (Date.now() - window.twoFingerDownTime < 400)) {
+        if (!window.twoFingerMoved && window.twoFingerDownTime && (Date.now() - window.twoFingerDownTime < 1000)) {
             handleUndo();
         }
     }

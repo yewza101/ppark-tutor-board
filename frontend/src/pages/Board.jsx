@@ -1175,6 +1175,8 @@ const Board = () => {
                 ctx.beginPath(); ctx.arc(el.x2, el.y2, hs, 0, Math.PI*2); ctx.fill(); ctx.stroke();
                 ctx.restore();
             }
+
+
             if (el && (el.type === 'image' || el.type === 'math' || el.type === 'rectangle')) {
                 isSpecialSingle = true;
                 const cx = el.x + el.w / 2;
@@ -2022,7 +2024,7 @@ const Board = () => {
     
     // Request animation frame for smooth redraw
     requestAnimationFrame(() => { 
-        if (dragContext.current && (dragContext.current.type === 'move' || dragContext.current.type === 'rotate' || dragContext.current.type === 'rotateGroup' || dragContext.current.type === 'scale' || dragContext.current.type === 'vertex')) {
+        if (dragContext.current && (dragContext.current.type === 'move' || dragContext.current.type === 'rotate' || dragContext.current.type === 'rotateGroup' || dragContext.current.type === 'scale' || dragContext.current.type === 'vertex' || dragContext.current.type === 'circle_center' || dragContext.current.type === 'circle_radius' || dragContext.current.type === 'line_vertex')) {
             if (fullRedrawRef.current) fullRedrawRef.current();
         } else {
             if (redrawDraftRef.current) redrawDraftRef.current(); 
@@ -2617,13 +2619,17 @@ const Board = () => {
 
   const handleUndo = () => {
     if (isReadonly) return;
-    if (pastStates.length === 0) return;
+    if (pastStates.length === 0) {
+        showToast('Nothing to Undo');
+        return;
+    }
     const previous = pastStates[pastStates.length - 1];
     const newPast = pastStates.slice(0, -1);
     setPastStates(newPast);
     setFutureStates([elements, ...futureStates]);
     setElements(previous);
     if (socket) socket.emit('undo', studentId);
+    showToast('Undo');
   };
 
   const handleRedo = () => {

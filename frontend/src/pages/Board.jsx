@@ -86,16 +86,7 @@ const drawAngleGuides = (ctx, el) => {
                  ctx.fillText(deg + '°', curr.x + 10, curr.y + 10);
              }
          }
-    } else if (el.type === 'polygon' || el.type === 'polyline') {
-    if (!el.points || el.points.length === 0) return false;
-    for (let i = 0; i < el.points.length; i++) {
-        const p1 = el.points[i];
-        const p2 = el.points[(i + 1) % el.points.length];
-        if (el.type !== 'polygon' && i === el.points.length - 1) continue;
-        if (p1 && p2 && distancePointToSegment(pt, p1, p2) < hitRadius) return true;
-    }
-    return false;
-  } else if (el.type === 'line') {
+    } else if (el.type === 'line') {
         const a = Math.atan2((el.y2||0) - (el.y1||0), (el.x2||0) - (el.x1||0)) * (180/Math.PI);
         ctx.fillText(Math.round(Math.abs(a)) + '°', (el.x2||0) + 10, (el.y2||0) + 10);
     } else if (el.type === 'rectangle') {
@@ -777,6 +768,14 @@ const Board = () => {
       
       
       if (el.type === 'polygon' || el.type === 'polyline' || el.isSnapped || el.isSnappedAngle) {
+          if (el.isSnapped && el.type === 'path' && el.points && el.points.length === 2) {
+              ctx.beginPath();
+              ctx.moveTo(el.points[0].x, el.points[0].y);
+              ctx.lineTo(el.points[1].x, el.points[1].y);
+              ctx.stroke();
+              ctx.restore();
+              return;
+          }
           ctx.beginPath();
           if (el.points && el.points.length > 0) {
               ctx.moveTo(el.points[0].x, el.points[0].y);
@@ -2023,7 +2022,7 @@ const Board = () => {
     
     // Request animation frame for smooth redraw
     requestAnimationFrame(() => { 
-        if (dragContext.current && (dragContext.current.type === 'move' || dragContext.current.type === 'rotate' || dragContext.current.type === 'rotateGroup' || dragContext.current.type === 'scale')) {
+        if (dragContext.current && (dragContext.current.type === 'move' || dragContext.current.type === 'rotate' || dragContext.current.type === 'rotateGroup' || dragContext.current.type === 'scale' || dragContext.current.type === 'vertex')) {
             if (fullRedrawRef.current) fullRedrawRef.current();
         } else {
             if (redrawDraftRef.current) redrawDraftRef.current(); 

@@ -1,0 +1,12 @@
+{
+  "name": "ppark-tutor-board-root",
+  "version": "1.0.0",
+  "description": "Root runner for Railway and monorepo deployment",
+  "main": "backend/server.js",
+  "scripts": {
+    "install-backend": "cd backend && npm install",
+    "postinstall": "cd backend && npm install",
+    "build": "cd backend && npm install",
+    "start": "cd backend && node server.js"
+  }
+}

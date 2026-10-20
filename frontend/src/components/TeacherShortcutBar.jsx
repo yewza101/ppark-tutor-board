@@ -33,7 +33,7 @@ const TeacherShortcutBar = ({ currentBoardId }) => {
     };
     
     fetchData();
-    const interval = setInterval(fetchData, 5000);
+    const interval = setInterval(fetchData, 12000);
     return () => {
       isMounted = false;
       clearInterval(interval);

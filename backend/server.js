@@ -27,7 +27,10 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"]
   },
-  maxHttpBufferSize: 1e8 // 100 MB to prevent large boards from being dropped
+  maxHttpBufferSize: 1e8, // 100 MB to prevent large boards from being dropped
+  perMessageDeflate: {
+    threshold: 1024 // Automatically compress WebSocket payloads > 1KB
+  }
 });
 
 app.use(cors());

@@ -428,7 +428,7 @@ const Board = () => {
           isPresentationMode
         });
       }
-    }, 2000);
+    }, 25000);
     return () => clearInterval(interval);
   }, [socket, pan, zoom, viewportSize, studentId, isPresentationMode]);
 
@@ -520,6 +520,8 @@ const Board = () => {
   
   const remotePaths = useRef({});
   const lastEmitTime = useRef(0);
+  const lastCursorEmitTime = useRef(0);
+  const lastCursorPosRef = useRef({ x: 0, y: 0 });
   const lastEraserPos = useRef(null);
 
   // Initialize Socket and Fetch initial data
@@ -1320,10 +1322,12 @@ const Board = () => {
 
   const getMousePos = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
+    const rawX = (e.clientX - rect.left - pan.x) / zoom;
+    const rawY = (e.clientY - rect.top - pan.y) / zoom;
     return {
-      x: (e.clientX - rect.left - pan.x) / zoom,
-      y: (e.clientY - rect.top - pan.y) / zoom,
-      pressure: e.pressure !== undefined ? e.pressure : 0.5
+      x: Math.round(rawX * 10) / 10,
+      y: Math.round(rawY * 10) / 10,
+      pressure: e.pressure !== undefined ? Math.round(e.pressure * 100) / 100 : 0.5
     };
   };
 
@@ -1721,18 +1725,20 @@ const Board = () => {
 
     const pos = getMousePos(e);
     const now = Date.now();
-    const shouldEmit = now - lastEmitTime.current > 50; // Throttle to 20fps to save bandwidth
     
-    if (socket && socket.id && shouldEmit) {
-      // Throttle cursor emit slightly in a real app, but raw is fine for local
+    // Throttle cursor emit to ~12fps (80ms) and only if moved > 2px to save massive bandwidth
+    const lastPos = lastCursorPosRef.current;
+    const distMoved = Math.hypot(pos.x - lastPos.x, pos.y - lastPos.y);
+    if (socket && socket.id && (now - lastCursorEmitTime.current > 80) && distMoved > 2) {
       socket.emit('cursor-move', {
         boardId: studentId,
         username: user?.username || 'Unknown',
-        x: pos.x,
-        y: pos.y,
+        x: Math.round(pos.x),
+        y: Math.round(pos.y),
         color: user?.role === 'admin' ? '#ef4444' : '#3b82f6'
       });
-      lastEmitTime.current = now;
+      lastCursorEmitTime.current = now;
+      lastCursorPosRef.current = pos;
     }
 
     if (activePointerId.current !== e.pointerId) return; // Ignore other pointers
@@ -2031,7 +2037,8 @@ const Board = () => {
         }
     });
     
-    if (socket && socket.id && shouldEmit) {
+    const shouldEmitDraw = now - lastEmitTime.current > 75; // ~13fps live stroke preview
+    if (socket && socket.id && shouldEmitDraw && currentPath.current) {
       socket.emit('draw-progress', { 
         boardId: studentId, 
         path: currentPath.current, 

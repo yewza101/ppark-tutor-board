@@ -41,7 +41,7 @@ const AdminDashboard = () => {
     };
     
     fetchActiveBoards();
-    const interval = setInterval(fetchActiveBoards, 5000);
+    const interval = setInterval(fetchActiveBoards, 12000);
     return () => clearInterval(interval);
   }, [user, navigate, token]);
 

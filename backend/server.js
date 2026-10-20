@@ -207,25 +207,6 @@ io.on('connection', (socket) => {
     }
   });
 
-      
-      for (const student of filteredStudents) {
-         const sid = String(student.id);
-         
-         // Clear
-         boardStates[sid] = [];
-         socket.to(`board_${sid}`).emit('clear-canvas');
-         
-         // Add new sheet
-         boardStates[sid].push(stroke);
-         socket.to(`board_${sid}`).emit('draw-stroke', { boardId: sid, stroke });
-         saveBoardState(sid);
-      }
-      
-    } catch (err) {
-      console.error('Error syncing sheet to students:', err);
-    }
-  });
-
 
   socket.on('delete-element', async (data) => {
     // data = { boardId, elementId }
@@ -274,8 +255,6 @@ io.on('connection', (socket) => {
       elements.push(...data.elements);
       saveBoardState(boardId);
       socket.to(`board_${boardId}`).emit('add-elements', { elements: data.elements });
-    }
-  });
     }
   });
 

@@ -139,7 +139,7 @@ io.on('connection', (socket) => {
     try {
       const { createClient } = require('@supabase/supabase-js');
       const supabaseUrl = process.env.SUPABASE_URL;
-      const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+      const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
       const supabase = createClient(supabaseUrl, supabaseKey);
       
       const { data: students } = await supabase
@@ -174,7 +174,7 @@ io.on('connection', (socket) => {
     try {
       const { createClient } = require('@supabase/supabase-js');
       const supabaseUrl = process.env.SUPABASE_URL;
-      const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+      const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
       const supabase = createClient(supabaseUrl, supabaseKey);
       
       const { data: students } = await supabase

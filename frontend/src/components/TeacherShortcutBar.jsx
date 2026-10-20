@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/useAuthStore';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://api.ppark-tutor.com';
+const API_URL = import.meta.env.VITE_API_URL || 'https://ppark-tutor-board-production.up.railway.app';
 
 const TeacherShortcutBar = ({ currentBoardId }) => {
   const { token, user } = useAuthStore();

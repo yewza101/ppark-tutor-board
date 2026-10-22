@@ -26,14 +26,15 @@ router.use(verifyAuth);
 // Get board data for a specific user
 router.get('/:userId', async (req, res) => {
   const userIdParam = req.params.userId;
+  const isTeacherBoard = typeof userIdParam === 'string' && userIdParam.startsWith('teacher_board');
   let targetUserId = userIdParam;
   
-  if (userIdParam !== 'teacher_board') {
+  if (!isTeacherBoard) {
     targetUserId = parseInt(userIdParam, 10);
   }
   
-  // Student can only access their own board or the teacher board
-  if (req.user.role === 'student' && targetUserId !== req.user.id && targetUserId !== 'teacher_board') {
+  // Student can only access their own board or any teacher board
+  if (req.user.role === 'student' && targetUserId !== req.user.id && !isTeacherBoard) {
     return res.status(403).json({ message: 'Forbidden' });
   }
 

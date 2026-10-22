@@ -80,10 +80,10 @@ io.on('connection', (socket) => {
   socket.on('join-board', (data) => {
     let boardId, role;
     if (typeof data === 'object' && data !== null) {
-      boardId = data.boardId;
+      boardId = String(data.boardId);
       role = data.role;
     } else {
-      boardId = data; // Backward compatibility
+      boardId = String(data); // Backward compatibility
       role = 'student';
     }
     
@@ -118,16 +118,24 @@ io.on('connection', (socket) => {
   socket.on('draw-stroke', async (data) => {
     // data = { boardId, stroke, socketId }
     socket.to(`board_${data.boardId}`).emit('draw-stroke', data);
-    const elements = await getBoardState(data.boardId);
-    elements.push(data.stroke);
-    saveBoardState(data.boardId);
+    try {
+      const elements = await getBoardState(data.boardId);
+      elements.push(data.stroke);
+      saveBoardState(data.boardId);
+    } catch (err) {
+      console.error('Error in draw-stroke cache:', err);
+    }
   });
 
   socket.on('undo', async (boardId) => {
     socket.to(`board_${boardId}`).emit('undo');
-    const elements = await getBoardState(boardId);
-    elements.pop();
-    saveBoardState(boardId);
+    try {
+      const elements = await getBoardState(boardId);
+      elements.pop();
+      saveBoardState(boardId);
+    } catch (err) {
+      console.error('Error in undo cache:', err);
+    }
   });
 
   socket.on('clear-canvas', async (boardId) => {

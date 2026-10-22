@@ -4,9 +4,11 @@ const boardStates = {};
 const saveTimeouts = {};
 const loadingPromises = {};
 
+const isTeacherBoardId = (id) => id === 'teacher_board' || (typeof id === 'string' && id.startsWith('teacher_board'));
+
 const getBoardState = async (boardId) => {
     if (!boardStates[boardId]) {
-      if (boardId === 'teacher_board') {
+      if (isTeacherBoardId(boardId)) {
           boardStates[boardId] = [];
       } else {
           if (!loadingPromises[boardId]) {
@@ -32,7 +34,7 @@ const getBoardState = async (boardId) => {
 };
 
 const saveBoardState = (boardId) => {
-    if (boardId === 'teacher_board') return; // Do not save teacher_board to DB
+    if (isTeacherBoardId(boardId)) return; // Do not save teacher_board to DB
     
     if (saveTimeouts[boardId]) {
         clearTimeout(saveTimeouts[boardId]);
@@ -53,7 +55,7 @@ const saveBoardState = (boardId) => {
 };
 
 const flushSave = async (boardId) => {
-    if (boardId === 'teacher_board') return; // Do not save teacher_board to DB
+    if (isTeacherBoardId(boardId)) return; // Do not save teacher_board to DB
     
     if (saveTimeouts[boardId]) {
         clearTimeout(saveTimeouts[boardId]);

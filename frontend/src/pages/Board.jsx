@@ -531,32 +531,40 @@ const Board = () => {
       return;
     }
 
-    const loadBoard = async () => {
+    const syncBoardFromServer = async () => {
       try {
         const res = await axios.get(`${API_URL}/api/boards/${studentId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        if (res.data.canvas_data) {
+        if (res.data?.canvas_data) {
           let parsed = res.data.canvas_data;
           if (typeof parsed === 'string') {
             try { parsed = JSON.parse(parsed); } catch(e) { parsed = []; }
           }
-          // Handle double-encoded
           if (typeof parsed === 'string') {
             try { parsed = JSON.parse(parsed); } catch(e) { parsed = []; }
           }
           if (Array.isArray(parsed)) {
             setElements(parsed);
+            elementsRef.current = parsed;
+            if (fullRedrawRef.current) fullRedrawRef.current();
           }
         }
       } catch (err) {
-        console.error('Failed to load board', err);
+        console.error('Failed to sync board state:', err);
         if (err.response?.status === 403 || err.response?.status === 401) {
           navigate(user.role === 'admin' ? '/admin' : '/login');
         }
       }
     };
-    loadBoard();
+    syncBoardFromServer();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncBoardFromServer();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const newSocket = io(API_URL);
     setSocket(newSocket);
@@ -594,16 +602,7 @@ const Board = () => {
     newSocket.on('connect', () => {
       console.log('Socket connected/reconnected');
       newSocket.emit('join-board', { boardId: studentId, role: user?.role || 'student' });
-      
-      // Request full canvas state in case we missed events while disconnected
-      axios.get(`${API_URL}/api/board/${studentId}`)
-        .then(res => {
-          if (res.data) {
-            setElements(res.data);
-            if (fullRedrawRef.current) fullRedrawRef.current();
-          }
-        })
-        .catch(err => console.error('Error fetching board state on reconnect:', err));
+      syncBoardFromServer();
     });
 
     newSocket.on('add-elements', (data) => {
@@ -638,6 +637,7 @@ const Board = () => {
     newSocket.on('draw-stroke', (data) => {
       setElements(prev => {
         const newElements = [...prev, data.stroke];
+        elementsRef.current = newElements;
         setPastStates(p => [...p, prev]);
         setFutureStates([]);
         return newElements;
@@ -645,6 +645,7 @@ const Board = () => {
       if (data.socketId && remotePaths.current[data.socketId]) {
         delete remotePaths.current[data.socketId];
       }
+      if (fullRedrawRef.current) fullRedrawRef.current();
     });
 
     newSocket.on('undo', () => {
@@ -716,7 +717,10 @@ const Board = () => {
       }
     });
 
-    return () => newSocket.disconnect();
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      newSocket.disconnect();
+    };
   }, [studentId, user, token, navigate]);
 
   // We need to keep a ref to the latest redraw to avoid stale closures in socket events
@@ -872,7 +876,7 @@ const Board = () => {
               imageCacheRef.current[el.url] = 'error';
             };
             imageCacheRef.current[el.url] = 'loading';
-          } else if (imageCacheRef.current[el.url] !== 'loading') {
+          } else if (imageCacheRef.current[el.url] instanceof HTMLImageElement) {
             const img = imageCacheRef.current[el.url];
             if (el.type === 'image') {
               ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
@@ -1660,10 +1664,12 @@ const Board = () => {
   };
 
   const checkObjectEraserCollision = (pos) => {
-    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && el.type !== 'image' && el.type !== 'path' && isPointInElement(pos, el, brushSize));
+    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && el.type !== 'image' && isPointInElement(pos, el, Math.max(brushSize, 12)));
     if (elIdx !== -1) {
       const deletedEl = elementsRef.current[elIdx];
       if (deletedEl.id) {
+        setPastStates(prev => [...prev, elementsRef.current]);
+        setFutureStates([]);
         setElements(prev => {
           const newEls = prev.filter(e => e.id !== deletedEl.id);
           elementsRef.current = newEls;
@@ -1981,6 +1987,7 @@ const Board = () => {
     if (!isDrawing.current) return;
 
     if (currentTool === 'eraser-object') {
+      lastEraserPos.current = pos;
       checkObjectEraserCollision(pos);
       return;
     }
@@ -2221,15 +2228,15 @@ const Board = () => {
   };
 
   const handleExport = async () => {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       if (elementsRef.current.length === 0) {
           alert('ไม่มีข้อมูลให้ Export (No data to export)');
           return;
       }
       
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       elementsRef.current.forEach(el => {
           const bbox = getElementBoundingBox(el);
-          if (bbox.minX !== undefined) {
+          if (bbox.minX !== undefined && !isNaN(bbox.minX)) {
               minX = Math.min(minX, bbox.minX);
               minY = Math.min(minY, bbox.minY);
               maxX = Math.max(maxX, bbox.maxX);
@@ -2237,7 +2244,12 @@ const Board = () => {
           }
       });
       
-      const padding = 50;
+      if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+          alert('ไม่พบขอบเขตของเนื้อหาบนกระดาน');
+          return;
+      }
+      
+      const padding = 40;
       minX -= padding;
       minY -= padding;
       maxX += padding;
@@ -2246,66 +2258,120 @@ const Board = () => {
       const width = maxX - minX;
       const height = maxY - minY;
       
-      if (width <= 0 || height <= 0) return;
+      if (width <= 0 || height <= 0) {
+          alert('ขนาดพื้นที่กระดานไม่ถูกต้อง');
+          return;
+      }
       
       const prevCursor = document.body.style.cursor;
       document.body.style.cursor = 'wait';
       
       try {
+          // Preload all images so they draw synchronously without crashing
+          const imageElements = elementsRef.current.filter(el => (el.type === 'image' || el.type === 'math') && el.url);
+          await Promise.all(imageElements.map(el => {
+            return new Promise((resolve) => {
+              const cached = imageCacheRef.current[el.url];
+              if (cached instanceof HTMLImageElement && cached.complete && cached.naturalWidth > 0) {
+                return resolve();
+              }
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => {
+                imageCacheRef.current[el.url] = img;
+                resolve();
+              };
+              img.onerror = () => {
+                resolve();
+              };
+              img.src = el.url;
+            });
+          }));
+
+          // Safety cap to prevent browser canvas GPU memory crash (2400 max width)
+          const maxDimension = 2400;
+          const scale = width > maxDimension ? (maxDimension / width) : 1;
+          const exportW = Math.max(100, Math.round(width * scale));
+          const exportH = Math.max(100, Math.round(height * scale));
+
           const exportCanvas = document.createElement('canvas');
-          exportCanvas.width = width;
-          exportCanvas.height = height;
+          exportCanvas.width = exportW;
+          exportCanvas.height = exportH;
           const ctx = exportCanvas.getContext('2d');
           
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, width, height);
+          ctx.fillRect(0, 0, exportW, exportH);
           
           ctx.save();
+          ctx.scale(scale, scale);
           ctx.translate(-minX, -minY);
           
-          elementsRef.current.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, 1));
-          elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, 1));
+          elementsRef.current.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, scale));
+          elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, scale));
           ctx.restore();
           
-          const pdf = new jsPDF('p', 'pt', 'a4');
+          const pdf = new jsPDF({
+            orientation: 'p',
+            unit: 'pt',
+            format: 'a4',
+            compress: true
+          });
           const pdfWidth = pdf.internal.pageSize.getWidth();
           const pdfHeight = pdf.internal.pageSize.getHeight();
           
           const a4Ratio = pdfWidth / pdfHeight;
-          const canvasPageHeight = width / a4Ratio;
+          const canvasPageHeight = Math.max(100, Math.round(exportW / a4Ratio));
           
           let y = 0;
           let pageNum = 1;
           
-          while (y < height) {
+          while (y < exportH) {
               if (pageNum > 1) pdf.addPage();
               
+              const sliceH = Math.min(canvasPageHeight, exportH - y);
               const sliceCanvas = document.createElement('canvas');
-              sliceCanvas.width = width;
-              sliceCanvas.height = Math.min(canvasPageHeight, height - y);
+              sliceCanvas.width = exportW;
+              sliceCanvas.height = sliceH;
               const sliceCtx = sliceCanvas.getContext('2d');
               
               sliceCtx.fillStyle = '#ffffff';
-              sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+              sliceCtx.fillRect(0, 0, exportW, sliceH);
               
               sliceCtx.drawImage(
                   exportCanvas, 
-                  0, y, width, sliceCanvas.height, 
-                  0, 0, width, sliceCanvas.height
+                  0, y, exportW, sliceH, 
+                  0, 0, exportW, sliceH
               );
               
-              const imgData = sliceCanvas.toDataURL('image/jpeg', 0.95);
-              const renderHeight = (sliceCanvas.height / width) * pdfWidth;
-              pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, renderHeight);
+              const imgData = sliceCanvas.toDataURL('image/jpeg', 0.90);
+              const renderHeight = (sliceH / exportW) * pdfWidth;
+              pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, renderHeight, undefined, 'FAST');
               
               y += canvasPageHeight;
               pageNum++;
           }
           
-          pdf.save('ppark_board.pdf');
+          const filename = `ppark_board_${Date.now()}.pdf`;
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+          if (isIOS) {
+              const blob = pdf.output('blob');
+              const blobUrl = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = blobUrl;
+              link.download = filename;
+              link.target = '_blank';
+              document.body.appendChild(link);
+              link.click();
+              setTimeout(() => {
+                  document.body.removeChild(link);
+                  URL.revokeObjectURL(blobUrl);
+              }, 5000);
+          } else {
+              pdf.save(filename);
+          }
       } catch (err) {
           console.error('Export failed', err);
-          alert('Export failed');
+          alert('Export failed: ' + (err?.message || err));
       } finally {
           document.body.style.cursor = prevCursor;
       }

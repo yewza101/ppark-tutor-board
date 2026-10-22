@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const supabase = require('../db/database');
 const { JWT_SECRET } = require('./auth');
+const { clearAllBoardCache } = require('../boardCache');
 
 const router = express.Router();
 
@@ -27,14 +28,19 @@ const verifyAdmin = (req, res, next) => {
 
 router.use(verifyAdmin);
 
-// Get all students
+// Get all students (Master admin sees all; regular teacher sees their assigned students)
 router.get('/students', async (req, res) => {
-  const { data: students, error } = await supabase
+  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
+  let query = supabase
     .from('users')
-    .select('id, username, created_at, group_name')
-    .eq('role', 'student')
-    .eq('teacher_id', req.user.id)
-    .order('id', { ascending: false });
+    .select('id, username, created_at, group_name, teacher_id')
+    .eq('role', 'student');
+
+  if (!isMaster) {
+    query = query.eq('teacher_id', req.user.id);
+  }
+
+  const { data: students, error } = await query.order('id', { ascending: false });
 
   if (error) {
     return res.status(500).json({ message: 'Error fetching students' });
@@ -76,14 +82,20 @@ router.put('/students/:id/password', async (req, res) => {
     return res.status(400).json({ message: 'Password is required' });
   }
 
+  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
   const hash = bcrypt.hashSync(password, 10);
-  const { error } = await supabase
+  
+  let query = supabase
     .from('users')
     .update({ password_hash: hash })
     .eq('id', req.params.id)
-    .eq('role', 'student')
-    .eq('teacher_id', req.user.id);
+    .eq('role', 'student');
   
+  if (!isMaster) {
+    query = query.eq('teacher_id', req.user.id);
+  }
+
+  const { error } = await query;
   if (error) {
     return res.status(500).json({ message: 'Failed to update password' });
   }
@@ -93,13 +105,18 @@ router.put('/students/:id/password', async (req, res) => {
 
 // Delete student
 router.delete('/students/:id', async (req, res) => {
-  const { error } = await supabase
+  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
+  let query = supabase
     .from('users')
     .delete()
     .eq('id', req.params.id)
-    .eq('role', 'student')
-    .eq('teacher_id', req.user.id);
-  
+    .eq('role', 'student');
+
+  if (!isMaster) {
+    query = query.eq('teacher_id', req.user.id);
+  }
+
+  const { error } = await query;
   if (error) {
     return res.status(500).json({ message: 'Failed to delete student' });
   }
@@ -135,6 +152,97 @@ router.post('/register-teacher', async (req, res) => {
   }
   
   res.status(201).json({ message: 'Teacher registered successfully', user: data[0] });
+});
+
+// Get all teachers (for admin management)
+router.get('/teachers', async (req, res) => {
+  const { data: teachers, error } = await supabase
+    .from('users')
+    .select('id, username, teacher_code, created_at')
+    .eq('role', 'admin')
+    .neq('username', 'adminpark')
+    .order('id', { ascending: false });
+
+  if (error) {
+    return res.status(500).json({ message: 'Error fetching teachers' });
+  }
+  res.json(teachers || []);
+});
+
+// Delete a teacher
+router.delete('/teachers/:id', async (req, res) => {
+  const teacherId = req.params.id;
+  
+  // Guard: Never delete adminpark
+  const { data: targetUser } = await supabase
+    .from('users')
+    .select('username')
+    .eq('id', teacherId)
+    .single();
+
+  if (targetUser?.username === 'adminpark') {
+    return res.status(400).json({ message: 'Cannot delete master admin' });
+  }
+
+  const { error } = await supabase
+    .from('users')
+    .delete()
+    .eq('id', teacherId)
+    .eq('role', 'admin');
+
+  if (error) {
+    return res.status(500).json({ message: 'Failed to delete teacher' });
+  }
+
+  res.json({ message: 'Teacher deleted successfully' });
+});
+
+// Master System Cleanup: Clear all board cache, canvas drawings, and uploaded documents
+// IMPORTANT: Does NOT delete student or teacher accounts from `users`
+router.post('/clear-all-documents', async (req, res) => {
+  try {
+    // 1. Clear in-memory board cache and debounced timers
+    clearAllBoardCache();
+
+    // 2. Clear all boards data from database
+    const { error: dbError } = await supabase
+      .from('boards')
+      .delete()
+      .neq('user_id', 0); // deletes all rows
+
+    if (dbError) {
+      console.warn('Delete rows from boards warning, fallback to update:', dbError);
+      await supabase.from('boards').update({ canvas_data: '[]' }).neq('user_id', 0);
+    }
+
+    // 3. Clear all files in storage bucket 'board-assests'
+    let deletedFilesCount = 0;
+    try {
+      const { data: files } = await supabase.storage
+        .from('board-assests')
+        .list('', { limit: 1000 });
+
+      if (files && files.length > 0) {
+        const filePaths = files.map(f => f.name).filter(Boolean);
+        if (filePaths.length > 0) {
+          const { error: delError } = await supabase.storage
+            .from('board-assests')
+            .remove(filePaths);
+          if (!delError) deletedFilesCount = filePaths.length;
+        }
+      }
+    } catch (storageErr) {
+      console.warn('Storage files cleanup notice:', storageErr);
+    }
+
+    res.json({ 
+      message: 'ลบแคชกระดานและเอกสารทั้งหมดเรียบร้อยแล้ว (All documents and cache cleared)',
+      deletedFilesCount 
+    });
+  } catch (err) {
+    console.error('Failed to clear documents:', err);
+    res.status(500).json({ message: 'Failed to clear all documents: ' + (err?.message || err) });
+  }
 });
 
 module.exports = router;

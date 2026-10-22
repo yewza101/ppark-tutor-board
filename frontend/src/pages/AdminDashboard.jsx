@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Trash2, UserPlus, KeyRound, ExternalLink, LogOut } from 'lucide-react';
+import { Trash2, UserPlus, KeyRound, ExternalLink, LogOut, ShieldAlert, Users, Database, AlertTriangle } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import { API_URL } from '../config';
 
 const AdminDashboard = () => {
   const [students, setStudents] = useState([]);
+  const [teachers, setTeachers] = useState([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
@@ -18,9 +19,12 @@ const AdminDashboard = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [activeBoards, setActiveBoards] = useState([]);
+  const [isClearing, setIsClearing] = useState(false);
   
   const { user, token, logout } = useAuthStore();
   const navigate = useNavigate();
+
+  const isMasterAdmin = user?.username === 'adminpark' || user?.isMasterAdmin;
 
   useEffect(() => {
     if (!user || user.role !== 'admin') {
@@ -28,6 +32,9 @@ const AdminDashboard = () => {
       return;
     }
     fetchStudents();
+    if (isMasterAdmin) {
+      fetchTeachers();
+    }
     
     const fetchActiveBoards = async () => {
       try {
@@ -43,7 +50,7 @@ const AdminDashboard = () => {
     fetchActiveBoards();
     const interval = setInterval(fetchActiveBoards, 12000);
     return () => clearInterval(interval);
-  }, [user, navigate, token]);
+  }, [user, navigate, token, isMasterAdmin]);
 
   const fetchStudents = async () => {
     try {
@@ -57,6 +64,17 @@ const AdminDashboard = () => {
         logout();
         navigate('/login');
       }
+    }
+  };
+
+  const fetchTeachers = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/admin/teachers`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTeachers(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch teachers', err);
     }
   };
 
@@ -91,8 +109,49 @@ const AdminDashboard = () => {
       setSuccess(`Teacher ${newTeacherName} added successfully!`);
       setNewTeacherName('');
       setNewTeacherCode('');
+      if (isMasterAdmin) {
+        fetchTeachers();
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to register teacher');
+    }
+  };
+
+  const handleDeleteTeacher = async (teacherId, teacherUsername) => {
+    if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบบัญชีคุณครู "${teacherUsername}"?`)) return;
+    try {
+      await axios.delete(`${API_URL}/api/admin/teachers/${teacherId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSuccess(`ลบบัญชีคุณครู ${teacherUsername} เรียบร้อยแล้ว`);
+      fetchTeachers();
+    } catch (err) {
+      alert('ไม่สามารถลบบัญชีครูได้: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleClearAllDocuments = async () => {
+    const confirmation = prompt('คำเตือนความปลอดภัย:\nคุณกำลังจะลบรูปภาพ, PDF, และลายเส้นบนกระดานทั้งหมด เพื่อคืนพื้นที่จัดเก็บ\n(บัญชีของครูและนักเรียนจะไม่ถูกลบ)\n\nพิมพ์ "CONFIRM" เพื่อยืนยันการลบ:');
+    if (confirmation !== 'CONFIRM') {
+      alert('ยกเลิกการดำเนินการเรียบร้อยแล้ว');
+      return;
+    }
+    
+    setIsClearing(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await axios.post(`${API_URL}/api/admin/clear-all-documents`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const msg = res.data?.message || 'ลบแคชและเอกสารทั้งหมดเรียบร้อยแล้ว';
+      alert(msg);
+      setSuccess(msg);
+    } catch (err) {
+      alert('เกิดข้อผิดพลาดในการล้างข้อมูล: ' + (err.response?.data?.message || err.message));
+      setError('เกิดข้อผิดพลาดในการล้างข้อมูล');
+    } finally {
+      setIsClearing(false);
     }
   };
 
@@ -133,6 +192,11 @@ const AdminDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+            {isMasterAdmin && (
+              <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold border border-amber-300 flex items-center gap-1.5 shadow-sm">
+                <ShieldAlert size={14} /> Master Admin (adminpark)
+              </span>
+            )}
             <button
               onClick={() => navigate('/board/teacher_board')}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-sm font-medium"
@@ -150,17 +214,19 @@ const AdminDashboard = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+        {error && <div className="p-4 mb-6 text-sm text-red-700 bg-red-50 rounded-xl border border-red-200 shadow-sm">{error}</div>}
+        {success && <div className="p-4 mb-6 text-sm text-green-700 bg-green-50 rounded-xl border border-green-200 shadow-sm">{success}</div>}
+
         <div className="grid md:grid-cols-3 gap-8">
           
-          {/* Add Student Form */}
-          <div className="md:col-span-1">
+          {/* Left Column: Forms and System Actions */}
+          <div className="md:col-span-1 space-y-8">
+            
+            {/* Add Student Form */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
               <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                 <UserPlus className="text-blue-600" /> Add New Student
               </h2>
-              
-              {error && <div className="p-3 mb-4 text-sm text-red-600 bg-red-50 rounded-lg border border-red-100">{error}</div>}
-              {success && <div className="p-3 mb-4 text-sm text-green-600 bg-green-50 rounded-lg border border-green-100">{success}</div>}
               
               <form onSubmit={handleAddStudent} className="space-y-4">
                 <div>
@@ -197,14 +263,15 @@ const AdminDashboard = () => {
                 </div>
                 <button
                   type="submit"
-                  className="w-full px-4 py-2.5 text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors font-medium"
+                  className="w-full px-4 py-2.5 text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors font-medium shadow-sm"
                 >
                   Create Student
                 </button>
               </form>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mt-8">
+            {/* Add Teacher Form */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
               <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                 <UserPlus className="text-indigo-600" /> Add New Teacher
               </h2>
@@ -234,16 +301,90 @@ const AdminDashboard = () => {
                 </div>
                 <button
                   type="submit"
-                  className="w-full px-4 py-2.5 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 active:bg-indigo-800 transition-colors font-medium"
+                  className="w-full px-4 py-2.5 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 active:bg-indigo-800 transition-colors font-medium shadow-sm"
                 >
                   Create Teacher
                 </button>
               </form>
             </div>
+
+            {/* Master Admin: Storage Cleanup */}
+            {isMasterAdmin && (
+              <div className="bg-gradient-to-br from-red-50 to-orange-50 p-6 rounded-2xl border border-red-200 shadow-sm">
+                <h2 className="text-lg font-bold text-red-900 mb-2 flex items-center gap-2">
+                  <Database className="text-red-600" size={20} /> ล้างพื้นที่จัดเก็บ / แคชกระดาน
+                </h2>
+                <p className="text-xs text-red-700 mb-4 leading-relaxed">
+                  ลบเอกสาร PDF, รูปภาพ และลายเส้นทั้งหมดบนกระดานเพื่อแก้ปัญหาพื้นที่เต็ม
+                  <br />
+                  <strong className="text-red-900">หมายเหตุ:</strong> บัญชีคุณครูและนักเรียนทั้งหมดจะไม่ถูกลบ
+                </p>
+                <button
+                  onClick={handleClearAllDocuments}
+                  disabled={isClearing}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 active:bg-red-800 transition-colors font-medium shadow-sm disabled:opacity-50 text-sm"
+                >
+                  <AlertTriangle size={18} />
+                  {isClearing ? 'กำลังล้างข้อมูล...' : 'ลบเอกสารและแคชกระดานทั้งหมด'}
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Student List */}
-          <div className="md:col-span-2">
+          {/* Right Column: Student Groups & Teacher Management */}
+          <div className="md:col-span-2 space-y-8">
+            
+            {/* Master Admin: Teacher Management Table */}
+            {isMasterAdmin && (
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800">
+                    <Users className="text-indigo-600" /> จัดการบัญชีคุณครู ({teachers.length})
+                  </h2>
+                </div>
+                
+                {teachers.length === 0 ? (
+                  <div className="py-6 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                    ยังไม่มีบัญชีครูอื่นในระบบ
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-gray-200 rounded-xl">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          <th className="py-3 px-4 text-sm font-semibold text-gray-600">ชื่อครู (Username)</th>
+                          <th className="py-3 px-4 text-sm font-semibold text-gray-600">รหัสเข้าใช้งาน (Code)</th>
+                          <th className="py-3 px-4 text-sm font-semibold text-gray-600">วันที่สร้าง</th>
+                          <th className="py-3 px-4 text-sm font-semibold text-gray-600 text-right">จัดการ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teachers.map((t) => (
+                          <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                            <td className="py-3 px-4 font-medium text-gray-800">{t.username}</td>
+                            <td className="py-3 px-4 text-sm font-mono text-indigo-600 font-semibold">{t.teacher_code || '-'}</td>
+                            <td className="py-3 px-4 text-sm text-gray-500">
+                              {t.created_at ? new Date(t.created_at).toLocaleDateString() : '-'}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => handleDeleteTeacher(t.id, t.username)}
+                                title="ลบบัญชีครู"
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors inline-flex items-center gap-1 text-sm font-medium"
+                              >
+                                <Trash2 size={16} /> ลบ
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Student Groups */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
               <h2 className="text-xl font-bold mb-6">Student Groups</h2>
               

@@ -90,4 +90,18 @@ const flushAllSaves = async () => {
     console.log(`Flushed ${promises.length} pending board saves.`);
 };
 
-module.exports = { boardStates, getBoardState, saveBoardState, flushSave, flushAllSaves };
+const clearAllBoardCache = () => {
+    for (const boardId in saveTimeouts) {
+        clearTimeout(saveTimeouts[boardId]);
+        delete saveTimeouts[boardId];
+    }
+    for (const boardId in boardStates) {
+        delete boardStates[boardId];
+    }
+    for (const boardId in loadingPromises) {
+        delete loadingPromises[boardId];
+    }
+    console.log('Cleared all in-memory board caches and save timeouts.');
+};
+
+module.exports = { boardStates, getBoardState, saveBoardState, flushSave, flushAllSaves, clearAllBoardCache };

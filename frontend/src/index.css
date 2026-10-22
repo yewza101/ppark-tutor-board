@@ -5,11 +5,19 @@ body {
   padding: 0;
   min-width: 320px;
   min-height: 100vh;
+  -webkit-touch-callout: none;
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
+}
+
+canvas {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
 }
 
 .no-scrollbar::-webkit-scrollbar {

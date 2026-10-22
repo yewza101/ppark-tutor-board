@@ -88,6 +88,7 @@ const MiniBoard = ({ student, token }) => {
     socket.on('draw-stroke', (data) => {
       setElements(prev => [...prev, data.stroke]);
       delete remotePaths.current[data.socketId];
+      setRedrawTrigger(prev => prev + 1);
     });
 
     socket.on('undo', () => {
@@ -123,8 +124,8 @@ const MiniBoard = ({ student, token }) => {
       ctx.beginPath();
       
       if (el.tool === 'highlighter') {
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.globalAlpha = 0.6;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 0.35;
       }
       
       ctx.strokeStyle = el.color || '#000000';
@@ -194,6 +195,26 @@ const MiniBoard = ({ student, token }) => {
       } else if (el.type === 'circle') {
         const r = Math.sqrt(Math.pow(el.w || 0, 2) + Math.pow(el.h || 0, 2));
         ctx.arc(el.x || 0, el.y || 0, r, 0, 2 * Math.PI);
+        ctx.stroke();
+      } else if (el.type === 'polygon' || el.type === 'polyline') {
+        if (el.points && el.points.length > 0) {
+          ctx.beginPath();
+          ctx.moveTo(el.points[0].x, el.points[0].y);
+          for (let i = 1; i < el.points.length; i++) {
+            if (el.points[i]) ctx.lineTo(el.points[i].x, el.points[i].y);
+          }
+          if (el.type === 'polygon') ctx.closePath();
+          ctx.stroke();
+        }
+      } else if (el.type === 'triangle') {
+        ctx.beginPath();
+        const p1 = {x: el.x + el.w / 2, y: el.y};
+        const p2 = {x: el.x + el.w, y: el.y + el.h};
+        const p3 = {x: el.x, y: el.y + el.h};
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.lineTo(p3.x, p3.y);
+        ctx.closePath();
         ctx.stroke();
       } else if (el.type === 'image' || el.type === 'math') {
         if (!imageCacheRef.current[el.url]) {

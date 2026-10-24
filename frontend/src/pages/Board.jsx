@@ -288,7 +288,9 @@ const getElementBoundingBox = (el) => {
          minY = Math.min(...validPoints.map(p => p.y));
          maxX = Math.max(...validPoints.map(p => p.x));
          maxY = Math.max(...validPoints.map(p => p.y));
-         if (el.type === 'path') el.bbox = { minX, minY, maxX, maxY };
+         if (el.type === 'path') {
+           try { el.bbox = { minX, minY, maxX, maxY }; } catch (e) {}
+         }
      }
   } else if (el.type === 'triangle') {
      const p1 = { x: el.x + el.w / 2, y: el.y };
@@ -1362,7 +1364,9 @@ const Board = () => {
   }, [redrawBase, redrawDraft]);
 
   useEffect(() => {
-    elementsRef.current = elements;
+    if (!dragContext.current) {
+      elementsRef.current = elements;
+    }
     redrawBaseRef.current = redrawBase;
     redrawDraftRef.current = redrawDraft;
     fullRedrawRef.current = fullRedraw;
@@ -1425,6 +1429,12 @@ const Board = () => {
         setIsPanning(false);
         isDrawing.current = false;
         currentPath.current = null;
+        if (dragContext.current) {
+            if (dragContext.current.origElementsState) {
+                elementsRef.current = dragContext.current.origElementsState;
+            }
+            dragContext.current = null;
+        }
         if (draftCanvasRef.current) {
           draftCanvasRef.current.getContext('2d')?.clearRect(0, 0, draftCanvasRef.current.width, draftCanvasRef.current.height);
         }
@@ -1871,47 +1881,48 @@ const Board = () => {
                 angleDelta = Math.round(angleDelta / snapAngle) * snapAngle;
             }
             
-            elementsRef.current.forEach(el => {
-                if (selectedElementIds.includes(el.id)) {
-                    const origEl = dragContext.current.origElements.find(e => e.id === el.id);
-                    if (!origEl) return;
-                    
-                    if (origEl.points && Array.isArray(origEl.points)) {
-                        el.points = origEl.points.map(p => {
-                            if (!p) return null;
-                            const pt = getPt(p);
-                            if (!pt) return null;
-                            const rotated = rotatePoint(pt.x, pt.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                            return {
-                                x: rotated.x,
-                                y: rotated.y,
-                                ...(p.pressure !== undefined ? { pressure: p.pressure } : {})
-                            };
-                        });
-                        el.bbox = null;
-                        el.path2d = null;
-                    }
-                    if (origEl.x1 !== undefined && origEl.y1 !== undefined && origEl.x2 !== undefined && origEl.y2 !== undefined) {
-                        const p1 = rotatePoint(origEl.x1, origEl.y1, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                        const p2 = rotatePoint(origEl.x2, origEl.y2, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                        el.x1 = p1.x; el.y1 = p1.y;
-                        el.x2 = p2.x; el.y2 = p2.y;
-                    }
-                    if (!origEl.points) {
-                        if (el.type === 'circle') {
-                            const newCenter = rotatePoint(origEl.x, origEl.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                            el.x = newCenter.x;
-                            el.y = newCenter.y;
-                        } else if (origEl.x !== undefined && origEl.y !== undefined) {
-                            const origCX = origEl.x + (origEl.w || 0)/2;
-                            const origCY = origEl.y + (origEl.h || 0)/2;
-                            const newCenter = rotatePoint(origCX, origCY, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                            el.x = newCenter.x - (origEl.w || 0)/2;
-                            el.y = newCenter.y - (origEl.h || 0)/2;
-                            el.rotation = (origEl.rotation || 0) + angleDelta;
-                        }
+            elementsRef.current = elementsRef.current.map(el => {
+                if (!selectedElementIds.includes(el.id)) return el;
+                const origEl = dragContext.current.origElements.find(e => e.id === el.id);
+                if (!origEl) return el;
+                const updated = { ...origEl };
+                
+                if (origEl.points && Array.isArray(origEl.points)) {
+                    updated.points = origEl.points.map(p => {
+                        if (!p) return null;
+                        const pt = getPt(p);
+                        if (!pt) return null;
+                        const rotated = rotatePoint(pt.x, pt.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                        return {
+                            x: rotated.x,
+                            y: rotated.y,
+                            ...(p.pressure !== undefined ? { pressure: p.pressure } : {})
+                        };
+                    });
+                    updated.bbox = null;
+                    updated.path2d = null;
+                }
+                if (origEl.x1 !== undefined && origEl.y1 !== undefined && origEl.x2 !== undefined && origEl.y2 !== undefined) {
+                    const p1 = rotatePoint(origEl.x1, origEl.y1, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                    const p2 = rotatePoint(origEl.x2, origEl.y2, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                    updated.x1 = p1.x; updated.y1 = p1.y;
+                    updated.x2 = p2.x; updated.y2 = p2.y;
+                }
+                if (!origEl.points) {
+                    if (updated.type === 'circle') {
+                        const newCenter = rotatePoint(origEl.x, origEl.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                        updated.x = newCenter.x;
+                        updated.y = newCenter.y;
+                    } else if (origEl.x !== undefined && origEl.y !== undefined) {
+                        const origCX = origEl.x + (origEl.w || 0)/2;
+                        const origCY = origEl.y + (origEl.h || 0)/2;
+                        const newCenter = rotatePoint(origCX, origCY, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                        updated.x = newCenter.x - (origEl.w || 0)/2;
+                        updated.y = newCenter.y - (origEl.h || 0)/2;
+                        updated.rotation = (origEl.rotation || 0) + angleDelta;
                     }
                 }
+                return updated;
             });
             if (socket && socket.id && shouldEmit) {
               elementsRef.current.forEach(el => {
@@ -1921,121 +1932,115 @@ const Board = () => {
               });
             }
         } else {
-          dragContext.current.origElements.forEach(origEl => {
-            if (!origEl) return;
-            const elIdx = elementsRef.current.findIndex(e => e.id === origEl.id);
-            if (elIdx === -1) return;
-            const el = elementsRef.current[elIdx];
-            
-            if (dragContext.current.type === 'rotate') {
-              const dx = pos.x - dragContext.current.cx;
-              const dy = pos.y - dragContext.current.cy;
-              // Calculate angle, adjust by Math.PI/2 because rotate handle is at the top (which is -y)
-              // Math.atan2(dy, dx) returns angle from positive x-axis. Top is -PI/2.
-              let angle = Math.atan2(dy, dx) + Math.PI/2;
-              
-              // Apply snapping to common angles if Shift is held
-              if (e.shiftKey) {
-                  const snapAngle = Math.PI / 12; // 15 degrees
-                  angle = Math.round(angle / snapAngle) * snapAngle;
-              }
-              
-              elementsRef.current.forEach(el => {
-                  if (selectedElementIds.includes(el.id)) {
-                      el.rotation = angle;
-                  }
-              });
-            } else if (dragContext.current.type === 'move') {
-              if (Array.isArray(origEl.points)) {
-                el.points = origEl.points.map(origPt => {
-                  if (origPt === null || origPt === undefined) return null;
-                  const pt = getPt(origPt);
-                  if (!pt) return null;
-                  return {
-                    x: pt.x + dx,
-                    y: pt.y + dy,
-                    ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
-                  };
-                });
-                el.bbox = null;
-                el.path2d = null;
-              }
-              if (origEl.x !== undefined) el.x = origEl.x + dx;
-              if (origEl.y !== undefined) el.y = origEl.y + dy;
-              if (origEl.x1 !== undefined) el.x1 = origEl.x1 + dx;
-              if (origEl.y1 !== undefined) el.y1 = origEl.y1 + dy;
-              if (origEl.x2 !== undefined) el.x2 = origEl.x2 + dx;
-              if (origEl.y2 !== undefined) el.y2 = origEl.y2 + dy;
-            } else if (dragContext.current.type === 'circle_center') {
-              if (el.type === 'circle') {
-                 el.x = origEl.x + dx;
-                 el.y = origEl.y + dy;
-              }
-            } else if (dragContext.current.type === 'circle_radius') {
-              if (el.type === 'circle') {
-                 const newR = Math.max(5, Math.hypot((pos.x - el.x), (pos.y - el.y)));
-                 el.w = newR;
-                 el.h = 0;
-              }
+            elementsRef.current = elementsRef.current.map(el => {
+                const origEl = dragContext.current.origElements.find(e => e.id === el.id);
+                if (!origEl) return el;
+                const updated = { ...origEl };
 
-            } else if (dragContext.current.type === 'line_vertex') {
-              const dx = (pos.x - dragContext.current.startX);
-              const dy = (pos.y - dragContext.current.startY);
-              if (el.type === 'line') {
-                 if (dragContext.current.vertexIndex === 1) {
-                     el.x1 = dragContext.current.origElements[0].x1 + dx;
-                     el.y1 = dragContext.current.origElements[0].y1 + dy;
-                 } else {
-                     el.x2 = dragContext.current.origElements[0].x2 + dx;
-                     el.y2 = dragContext.current.origElements[0].y2 + dy;
-                 }
-              }
-            } else if (dragContext.current.type === 'vertex') {
-              const dx = (pos.x - dragContext.current.startX);
-              const dy = (pos.y - dragContext.current.startY);
-              if (el.type === 'polygon' || el.isSnappedAngle || el.isSnapped || el.type === 'polyline') {
-                 el.points[dragContext.current.vertexIndex] = { 
-                     x: dragContext.current.origElements[0].points[dragContext.current.vertexIndex].x + dx, 
-                     y: dragContext.current.origElements[0].points[dragContext.current.vertexIndex].y + dy 
-                 };
-                 // Invalidate bbox and path2d
-                 el.bbox = null;
-                 el.path2d = null;
-              }
-            } else if (dragContext.current.type === 'scale') {
-               const origW = dragContext.current.gMaxX - dragContext.current.gMinX;
-               const newW = Math.max(20, origW + dx);
-               const scale = origW === 0 ? 1 : newW / origW;
-               
-               if (Array.isArray(origEl.points)) {
-                 el.points = origEl.points.map(origPt => {
-                   if (origPt === null || origPt === undefined) return null;
-                   const pt = getPt(origPt);
-                   if (!pt) return null;
-                   return { 
-                     x: dragContext.current.gMinX + (pt.x - dragContext.current.gMinX) * scale, 
-                     y: dragContext.current.gMinY + (pt.y - dragContext.current.gMinY) * scale,
-                     ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
-                   };
-                 });
-                 el.size = (origEl.size || 5) * scale;
-                 el.bbox = null;
-                 el.path2d = null;
-               }
-               if (origEl.x !== undefined) el.x = dragContext.current.gMinX + (origEl.x - dragContext.current.gMinX) * scale;
-               if (origEl.y !== undefined) el.y = dragContext.current.gMinY + (origEl.y - dragContext.current.gMinY) * scale;
-               if (origEl.x1 !== undefined) el.x1 = dragContext.current.gMinX + (origEl.x1 - dragContext.current.gMinX) * scale;
-               if (origEl.y1 !== undefined) el.y1 = dragContext.current.gMinY + (origEl.y1 - dragContext.current.gMinY) * scale;
-               if (origEl.x2 !== undefined) el.x2 = dragContext.current.gMinX + (origEl.x2 - dragContext.current.gMinX) * scale;
-               if (origEl.y2 !== undefined) el.y2 = dragContext.current.gMinY + (origEl.y2 - dragContext.current.gMinY) * scale;
-               if (origEl.w !== undefined) el.w = origEl.w * scale;
-               if (origEl.h !== undefined) el.h = origEl.h * scale;
-               if (origEl.size !== undefined) el.size = origEl.size * scale;
-            }
+                if (dragContext.current.type === 'rotate') {
+                    const rdx = pos.x - dragContext.current.cx;
+                    const rdy = pos.y - dragContext.current.cy;
+                    let angle = Math.atan2(rdy, rdx) + Math.PI/2;
+                    if (e.shiftKey) {
+                        const snapAngle = Math.PI / 12; // 15 degrees
+                        angle = Math.round(angle / snapAngle) * snapAngle;
+                    }
+                    updated.rotation = angle;
+                } else if (dragContext.current.type === 'move') {
+                    if (Array.isArray(origEl.points)) {
+                        updated.points = origEl.points.map(origPt => {
+                            if (origPt === null || origPt === undefined) return null;
+                            const pt = getPt(origPt);
+                            if (!pt) return null;
+                            return {
+                                x: pt.x + dx,
+                                y: pt.y + dy,
+                                ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
+                            };
+                        });
+                        updated.bbox = null;
+                        updated.path2d = null;
+                    }
+                    if (origEl.x !== undefined) updated.x = origEl.x + dx;
+                    if (origEl.y !== undefined) updated.y = origEl.y + dy;
+                    if (origEl.x1 !== undefined) updated.x1 = origEl.x1 + dx;
+                    if (origEl.y1 !== undefined) updated.y1 = origEl.y1 + dy;
+                    if (origEl.x2 !== undefined) updated.x2 = origEl.x2 + dx;
+                    if (origEl.y2 !== undefined) updated.y2 = origEl.y2 + dy;
+                } else if (dragContext.current.type === 'circle_center') {
+                    if (updated.type === 'circle') {
+                        updated.x = origEl.x + dx;
+                        updated.y = origEl.y + dy;
+                    }
+                } else if (dragContext.current.type === 'circle_radius') {
+                    if (updated.type === 'circle') {
+                        const newR = Math.max(5, Math.hypot((pos.x - updated.x), (pos.y - updated.y)));
+                        updated.w = newR;
+                        updated.h = 0;
+                    }
+                } else if (dragContext.current.type === 'line_vertex') {
+                    if (updated.type === 'line') {
+                        if (dragContext.current.vertexIndex === 1) {
+                            updated.x1 = origEl.x1 + dx;
+                            updated.y1 = origEl.y1 + dy;
+                        } else {
+                            updated.x2 = origEl.x2 + dx;
+                            updated.y2 = origEl.y2 + dy;
+                        }
+                    }
+                } else if (dragContext.current.type === 'vertex') {
+                    if (updated.type === 'polygon' || updated.isSnappedAngle || updated.isSnapped || updated.type === 'polyline') {
+                        if (Array.isArray(origEl.points)) {
+                            updated.points = origEl.points.map((p, idx) => {
+                                if (idx === dragContext.current.vertexIndex) {
+                                    return { x: p.x + dx, y: p.y + dy };
+                                }
+                                return p;
+                            });
+                            updated.bbox = null;
+                            updated.path2d = null;
+                        }
+                    }
+                } else if (dragContext.current.type === 'scale') {
+                    const origW = dragContext.current.gMaxX - dragContext.current.gMinX;
+                    const newW = Math.max(20, origW + dx);
+                    const scale = origW === 0 ? 1 : newW / origW;
+
+                    if (Array.isArray(origEl.points)) {
+                        updated.points = origEl.points.map(origPt => {
+                            if (origPt === null || origPt === undefined) return null;
+                            const pt = getPt(origPt);
+                            if (!pt) return null;
+                            return {
+                                x: dragContext.current.gMinX + (pt.x - dragContext.current.gMinX) * scale,
+                                y: dragContext.current.gMinY + (pt.y - dragContext.current.gMinY) * scale,
+                                ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
+                            };
+                        });
+                        updated.size = (origEl.size || 5) * scale;
+                        updated.bbox = null;
+                        updated.path2d = null;
+                    }
+                    if (origEl.x !== undefined) updated.x = dragContext.current.gMinX + (origEl.x - dragContext.current.gMinX) * scale;
+                    if (origEl.y !== undefined) updated.y = dragContext.current.gMinY + (origEl.y - dragContext.current.gMinY) * scale;
+                    if (origEl.x1 !== undefined) updated.x1 = dragContext.current.gMinX + (origEl.x1 - dragContext.current.gMinX) * scale;
+                    if (origEl.y1 !== undefined) updated.y1 = dragContext.current.gMinY + (origEl.y1 - dragContext.current.gMinY) * scale;
+                    if (origEl.x2 !== undefined) updated.x2 = dragContext.current.gMinX + (origEl.x2 - dragContext.current.gMinX) * scale;
+                    if (origEl.y2 !== undefined) updated.y2 = dragContext.current.gMinY + (origEl.y2 - dragContext.current.gMinY) * scale;
+                    if (origEl.w !== undefined) updated.w = origEl.w * scale;
+                    if (origEl.h !== undefined) updated.h = origEl.h * scale;
+                    if (origEl.size !== undefined) updated.size = origEl.size * scale;
+                }
+                return updated;
+            });
+
             if (socket && socket.id && shouldEmit) {
-              socket.emit('update-element', { boardId: studentId, element: el });
+                elementsRef.current.forEach(el => {
+                    if (selectedElementIds.includes(el.id)) {
+                        socket.emit('update-element', { boardId: studentId, element: el });
+                    }
+                });
             }
-          });
         }
         
         if (dragContext.current.origLassoPath) {
@@ -2049,25 +2054,7 @@ const Board = () => {
                 activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => {
                     return rotatePoint(p.x, p.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
                 });
-            } else if (dragContext.current.type === 'rotate') {
-            const dx = pos.x - dragContext.current.cx;
-            const dy = pos.y - dragContext.current.cy;
-            // Calculate angle, adjust by Math.PI/2 because rotate handle is at the top (which is -y)
-            // Math.atan2(dy, dx) returns angle from positive x-axis. Top is -PI/2.
-            let angle = Math.atan2(dy, dx) + Math.PI/2;
-            
-            // Apply snapping to common angles if Shift is held
-            if (e.shiftKey) {
-                const snapAngle = Math.PI / 12; // 15 degrees
-                angle = Math.round(angle / snapAngle) * snapAngle;
-            }
-            
-            elementsRef.current.forEach(el => {
-                if (selectedElementIds.includes(el.id)) {
-                    el.rotation = angle;
-                }
-            });
-          } else if (dragContext.current.type === 'move') {
+            } else if (dragContext.current.type === 'move') {
                 if (dragContext.current.origLassoPath && Array.isArray(dragContext.current.origLassoPath)) {
                   activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => ({
                       x: p.x + dx, y: p.y + dy
@@ -2087,7 +2074,6 @@ const Board = () => {
         }
         
         if (shouldEmit) lastEmitTime.current = now;
-        setElements([...elementsRef.current]);
         requestAnimationFrame(() => { if (fullRedrawRef.current) fullRedrawRef.current(); });
         return;
       }

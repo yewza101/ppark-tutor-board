@@ -329,17 +329,33 @@ const getElementBoundingBox = (el) => {
 };
 
 const isElementInLasso = (el, lassoPoints) => {
-  if (el.type === 'path' && el.points) {
-    return el.points.some(p => p !== null && isPointInPolygon(p, lassoPoints));
-  } else {
-    const box = getElementBoundingBox(el);
-    if (box.minX === undefined) return false;
-    const corners = [
-      {x: box.minX, y: box.minY}, {x: box.maxX, y: box.minY},
-      {x: box.minX, y: box.maxY}, {x: box.maxX, y: box.maxY}
-    ];
-    return corners.some(c => isPointInPolygon(c, lassoPoints));
+  if (!el) return false;
+  
+  // 1. If element has points (paths, freehand strokes, polygons, polylines, snapped shapes):
+  if (el.points && Array.isArray(el.points) && el.points.length > 0) {
+    const anyPtInside = el.points.some(p => {
+      const pt = getPt(p);
+      return pt && isPointInPolygon(pt, lassoPoints);
+    });
+    if (anyPtInside) return true;
   }
+
+  // 2. Check bounding box center and corners
+  const box = getElementBoundingBox(el);
+  if (box.minX === undefined || isNaN(box.minX)) return false;
+
+  // Check center
+  const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+  if (isPointInPolygon(center, lassoPoints)) return true;
+
+  // Check 4 corners
+  const corners = [
+    { x: box.minX, y: box.minY },
+    { x: box.maxX, y: box.minY },
+    { x: box.minX, y: box.maxY },
+    { x: box.maxX, y: box.maxY }
+  ];
+  return corners.some(c => isPointInPolygon(c, lassoPoints));
 };
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
@@ -989,10 +1005,10 @@ const Board = () => {
       }
       
       // Draw lock indicator for locked elements
-      if (el.locked) {
+      if (el.locked && !ctx.isExporting) {
         const box = getElementBoundingBox(el);
         if (box.minX !== undefined) {
-          const iconSize = 16 / (zoomLevel || 1);
+          const iconSize = 16 / (currentZoom || 1);
           const ix = box.minX - iconSize * 0.5;
           const iy = box.minY - iconSize * 1.2;
           ctx.save();
@@ -1571,7 +1587,11 @@ const Board = () => {
           dragContext.current = { 
             type: 'move', startX: pos.x, startY: pos.y, 
             isMoved: false,
-            origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id)))),
+            origElements: selectedElementIds
+              .map(id => elementsRef.current.find(e => e.id === id))
+              .filter(Boolean)
+              .map(el => JSON.parse(JSON.stringify(el))),
+            origElementsState: JSON.parse(JSON.stringify(elementsRef.current)),
             origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
           };
           startPoint.current = { x: e.clientX, y: e.clientY };
@@ -1905,18 +1925,31 @@ const Board = () => {
               });
             } else if (dragContext.current.type === 'move') {
               if (el.type === 'path' || el.type === 'polygon' || el.type === 'polyline') {
-                 el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { x: origEl.points[i].x + dx, y: origEl.points[i].y + dy }));
-                 el.bbox = null;
-                 el.path2d = null;
+                 if (Array.isArray(origEl.points)) {
+                   el.points = origEl.points.map(origPt => {
+                     if (origPt === null || origPt === undefined) return null;
+                     const pt = getPt(origPt);
+                     if (!pt) return null;
+                     return {
+                       x: pt.x + dx,
+                       y: pt.y + dy,
+                       ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
+                     };
+                   });
+                   el.bbox = null;
+                   el.path2d = null;
+                 }
               } else {
                  el.x = origEl.x + dx;
                  el.y = origEl.y + dy;
                  if (el.type === 'line') {
                    el.x1 = origEl.x1 + dx;
                    el.y1 = origEl.y1 + dy;
+                   el.x2 = origEl.x2 + dx;
+                   el.y2 = origEl.y2 + dy;
                  }
               }
-                                    } else if (dragContext.current.type === 'circle_center') {
+            } else if (dragContext.current.type === 'circle_center') {
               if (el.type === 'circle') {
                  el.x = origEl.x + dx;
                  el.y = origEl.y + dy;
@@ -1957,20 +1990,30 @@ const Board = () => {
                const newW = Math.max(20, origW + dx);
                const scale = origW === 0 ? 1 : newW / origW;
                
-               if (el.type === 'path') {
-                 el.points = el.points.map((p, i) => (origEl.points[i] === null ? null : { 
-                   x: dragContext.current.gMinX + (origEl.points[i].x - dragContext.current.gMinX) * scale, 
-                   y: dragContext.current.gMinY + (origEl.points[i].y - dragContext.current.gMinY) * scale 
-                 }));
-                 el.size = origEl.size * scale;
-                 el.bbox = null;
-                 el.path2d = null;
+               if (el.type === 'path' || el.type === 'polygon' || el.type === 'polyline') {
+                 if (Array.isArray(origEl.points)) {
+                   el.points = origEl.points.map(origPt => {
+                     if (origPt === null || origPt === undefined) return null;
+                     const pt = getPt(origPt);
+                     if (!pt) return null;
+                     return { 
+                       x: dragContext.current.gMinX + (pt.x - dragContext.current.gMinX) * scale, 
+                       y: dragContext.current.gMinY + (pt.y - dragContext.current.gMinY) * scale,
+                       ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
+                     };
+                   });
+                   el.size = (origEl.size || 5) * scale;
+                   el.bbox = null;
+                   el.path2d = null;
+                 }
                } else {
                  el.x = dragContext.current.gMinX + (origEl.x - dragContext.current.gMinX) * scale;
                  el.y = dragContext.current.gMinY + (origEl.y - dragContext.current.gMinY) * scale;
                  if (el.type === 'line') {
                    el.x1 = dragContext.current.gMinX + (origEl.x1 - dragContext.current.gMinX) * scale;
                    el.y1 = dragContext.current.gMinY + (origEl.y1 - dragContext.current.gMinY) * scale;
+                   el.x2 = dragContext.current.gMinX + (origEl.x2 - dragContext.current.gMinX) * scale;
+                   el.y2 = dragContext.current.gMinY + (origEl.y2 - dragContext.current.gMinY) * scale;
                  }
                  if (el.w !== undefined) el.w = origEl.w * scale;
                  if (el.h !== undefined) el.h = origEl.h * scale;
@@ -2013,17 +2056,21 @@ const Board = () => {
                 }
             });
           } else if (dragContext.current.type === 'move') {
-                activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => ({
-                    x: p.x + dx, y: p.y + dy
-                }));
+                if (dragContext.current.origLassoPath && Array.isArray(dragContext.current.origLassoPath)) {
+                  activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => ({
+                      x: p.x + dx, y: p.y + dy
+                  }));
+                }
             } else if (dragContext.current.type === 'scale') {
                 const origW = dragContext.current.gMaxX - dragContext.current.gMinX;
                 const newW = Math.max(20, origW + dx);
                 const scale = origW === 0 ? 1 : newW / origW;
-                activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => ({
-                    x: dragContext.current.gMinX + (p.x - dragContext.current.gMinX) * scale,
-                    y: dragContext.current.gMinY + (p.y - dragContext.current.gMinY) * scale
-                }));
+                if (dragContext.current.origLassoPath && Array.isArray(dragContext.current.origLassoPath)) {
+                  activeLassoPathRef.current = dragContext.current.origLassoPath.map(p => ({
+                      x: dragContext.current.gMinX + (p.x - dragContext.current.gMinX) * scale,
+                      y: dragContext.current.gMinY + (p.y - dragContext.current.gMinY) * scale
+                  }));
+                }
             }
         }
         
@@ -2193,6 +2240,8 @@ const Board = () => {
           const rect = canvasRef.current.getBoundingClientRect();
           setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
       } else {
+          setPastStates(p => [...p, dragContext.current.origElementsState || elementsRef.current]);
+          setFutureStates([]);
           if (socket && socket.id) {
             dragContext.current.origElements.forEach(origEl => {
                 if (!origEl) return;
@@ -2306,42 +2355,12 @@ const Board = () => {
           alert('ไม่มีข้อมูลให้ Export (No data to export)');
           return;
       }
-      
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      elementsRef.current.forEach(el => {
-          const bbox = getElementBoundingBox(el);
-          if (bbox.minX !== undefined && !isNaN(bbox.minX)) {
-              minX = Math.min(minX, bbox.minX);
-              minY = Math.min(minY, bbox.minY);
-              maxX = Math.max(maxX, bbox.maxX);
-              maxY = Math.max(maxY, bbox.maxY);
-          }
-      });
-      
-      if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
-          alert('ไม่พบขอบเขตของเนื้อหาบนกระดาน');
-          return;
-      }
-      
-      const padding = 40;
-      minX -= padding;
-      minY -= padding;
-      maxX += padding;
-      maxY += padding;
-      
-      const width = maxX - minX;
-      const height = maxY - minY;
-      
-      if (width <= 0 || height <= 0) {
-          alert('ขนาดพื้นที่กระดานไม่ถูกต้อง');
-          return;
-      }
-      
+
       const prevCursor = document.body.style.cursor;
       document.body.style.cursor = 'wait';
-      
+
       try {
-          // Preload all images so they draw synchronously without crashing
+          // Preload all images so they are fully loaded into memory before drawing
           const imageElements = elementsRef.current.filter(el => (el.type === 'image' || el.type === 'math') && el.url);
           await Promise.all(imageElements.map(el => {
             return new Promise((resolve) => {
@@ -2350,7 +2369,7 @@ const Board = () => {
                 return resolve();
               }
               const img = new Image();
-              img.crossOrigin = 'anonymous';
+              img.crossOrigin = 'Anonymous';
               img.onload = () => {
                 imageCacheRef.current[el.url] = img;
                 resolve();
@@ -2362,28 +2381,9 @@ const Board = () => {
             });
           }));
 
-          // Safety cap to prevent browser canvas GPU memory crash (2400 max width)
-          const maxDimension = 2400;
-          const scale = width > maxDimension ? (maxDimension / width) : 1;
-          const exportW = Math.max(100, Math.round(width * scale));
-          const exportH = Math.max(100, Math.round(height * scale));
+          const docPages = elementsRef.current.filter(el => el.isPage);
+          const isDocumentMode = docPages.length > 0;
 
-          const exportCanvas = document.createElement('canvas');
-          exportCanvas.width = exportW;
-          exportCanvas.height = exportH;
-          const ctx = exportCanvas.getContext('2d');
-          
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, exportW, exportH);
-          
-          ctx.save();
-          ctx.scale(scale, scale);
-          ctx.translate(-minX, -minY);
-          
-          elementsRef.current.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, scale));
-          elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, scale));
-          ctx.restore();
-          
           const pdf = new jsPDF({
             orientation: 'p',
             unit: 'pt',
@@ -2392,39 +2392,162 @@ const Board = () => {
           });
           const pdfWidth = pdf.internal.pageSize.getWidth();
           const pdfHeight = pdf.internal.pageSize.getHeight();
-          
-          const a4Ratio = pdfWidth / pdfHeight;
-          const canvasPageHeight = Math.max(100, Math.round(exportW / a4Ratio));
-          
-          let y = 0;
-          let pageNum = 1;
-          
-          while (y < exportH) {
-              if (pageNum > 1) pdf.addPage();
-              
-              const sliceH = Math.min(canvasPageHeight, exportH - y);
-              const sliceCanvas = document.createElement('canvas');
-              sliceCanvas.width = exportW;
-              sliceCanvas.height = sliceH;
-              const sliceCtx = sliceCanvas.getContext('2d');
-              
-              sliceCtx.fillStyle = '#ffffff';
-              sliceCtx.fillRect(0, 0, exportW, sliceH);
-              
-              sliceCtx.drawImage(
-                  exportCanvas, 
-                  0, y, exportW, sliceH, 
-                  0, 0, exportW, sliceH
-              );
-              
-              const imgData = sliceCanvas.toDataURL('image/jpeg', 0.90);
-              const renderHeight = (sliceH / exportW) * pdfWidth;
-              pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, renderHeight, undefined, 'FAST');
-              
-              y += canvasPageHeight;
-              pageNum++;
+
+          if (isDocumentMode) {
+            // Sort document pages from top to bottom (page 1, page 2, ...)
+            const sortedPages = [...docPages].sort((a, b) => (a.y || 0) - (b.y || 0));
+
+            for (let pIdx = 0; pIdx < sortedPages.length; pIdx++) {
+              if (pIdx > 0) pdf.addPage();
+              const page = sortedPages[pIdx];
+
+              // Target page canvas at crisp 2x resolution (e.g. 1600 x 2200)
+              const targetW = 1600;
+              const targetH = Math.round(targetW * ((page.h || 1100) / (page.w || 800)));
+              const scale = targetW / (page.w || 800);
+
+              const pageCanvas = document.createElement('canvas');
+              pageCanvas.width = targetW;
+              pageCanvas.height = targetH;
+              const ctx = pageCanvas.getContext('2d');
+              ctx.isExporting = true;
+
+              // Crisp white page background
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, targetW, targetH);
+
+              ctx.save();
+              ctx.scale(scale, scale);
+              ctx.translate(-page.x, -page.y);
+
+              // 1. Draw page background image
+              drawElement(ctx, page, scale);
+
+              // 2. Draw all non-page elements that overlap with this page
+              const pageBox = { minX: page.x, minY: page.y, maxX: page.x + page.w, maxY: page.y + page.h };
+              const overlappingElements = elementsRef.current.filter(el => {
+                if (el.isPage) return false;
+                const b = getElementBoundingBox(el);
+                if (b.minX === undefined || isNaN(b.minX)) return true;
+                return !(b.maxX < pageBox.minX || b.minX > pageBox.maxX || b.maxY < pageBox.minY || b.minY > pageBox.maxY);
+              });
+
+              // Draw overlapping images first, then strokes/shapes
+              overlappingElements.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, scale));
+              overlappingElements.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, scale));
+
+              ctx.restore();
+
+              const imgData = pageCanvas.toDataURL('image/jpeg', 0.92);
+              pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+            }
+          } else {
+            // Free Whiteboard Mode (no uploaded PDF document)
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            elementsRef.current.forEach(el => {
+              const bbox = getElementBoundingBox(el);
+              if (bbox.minX !== undefined && !isNaN(bbox.minX)) {
+                minX = Math.min(minX, bbox.minX);
+                minY = Math.min(minY, bbox.minY);
+                maxX = Math.max(maxX, bbox.maxX);
+                maxY = Math.max(maxY, bbox.maxY);
+              }
+            });
+
+            if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+              alert('ไม่พบขอบเขตของเนื้อหาบนกระดาน');
+              return;
+            }
+
+            const padding = 40;
+            minX -= padding;
+            minY -= padding;
+            maxX += padding;
+            maxY += padding;
+
+            const width = maxX - minX;
+            const height = maxY - minY;
+
+            if (width <= 0 || height <= 0) {
+              alert('ขนาดพื้นที่กระดานไม่ถูกต้อง');
+              return;
+            }
+
+            const a4Ratio = pdfWidth / pdfHeight; // ~0.707
+
+            // If content fits comfortably on one page (ratio close to A4 or single screen)
+            if (height <= (width / a4Ratio) * 1.5) {
+              const targetW = 1600;
+              const targetH = Math.round(targetW / a4Ratio);
+
+              const scale = Math.min((targetW - 80) / width, (targetH - 80) / height);
+              const offsetX = (targetW - width * scale) / 2;
+              const offsetY = (targetH - height * scale) / 2;
+
+              const canvas = document.createElement('canvas');
+              canvas.width = targetW;
+              canvas.height = targetH;
+              const ctx = canvas.getContext('2d');
+              ctx.isExporting = true;
+
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, targetW, targetH);
+
+              ctx.save();
+              ctx.translate(offsetX, offsetY);
+              ctx.scale(scale, scale);
+              ctx.translate(-minX, -minY);
+
+              elementsRef.current.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, scale));
+              elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, scale));
+              ctx.restore();
+
+              const imgData = canvas.toDataURL('image/jpeg', 0.92);
+              pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+            } else {
+              // Tall whiteboard notes -> Paginate into clean A4 pages
+              const pageContentHeight = width / a4Ratio;
+              let currentY = minY;
+              let pageNum = 1;
+
+              while (currentY < maxY) {
+                if (pageNum > 1) pdf.addPage();
+
+                const targetW = 1600;
+                const targetH = Math.round(targetW / a4Ratio);
+                const scale = targetW / width;
+
+                const pageCanvas = document.createElement('canvas');
+                pageCanvas.width = targetW;
+                pageCanvas.height = targetH;
+                const ctx = pageCanvas.getContext('2d');
+                ctx.isExporting = true;
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, targetW, targetH);
+
+                ctx.save();
+                ctx.scale(scale, scale);
+                ctx.translate(-minX, -currentY);
+
+                // Clip to current page view
+                ctx.beginPath();
+                ctx.rect(minX, currentY, width, pageContentHeight);
+                ctx.clip();
+
+                elementsRef.current.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, scale));
+                elementsRef.current.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, scale));
+                ctx.restore();
+
+                const imgData = pageCanvas.toDataURL('image/jpeg', 0.92);
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+
+                currentY += pageContentHeight;
+                pageNum++;
+              }
+            }
           }
-          
+
           const filename = `ppark_board_${Date.now()}.pdf`;
           const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
           if (isIOS) {

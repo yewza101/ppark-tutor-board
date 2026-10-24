@@ -858,7 +858,6 @@ const Board = () => {
               ctx.moveTo(el.points[0].x, el.points[0].y);
               ctx.lineTo(el.points[1].x, el.points[1].y);
               ctx.stroke();
-              ctx.restore();
               return;
           }
           ctx.beginPath();
@@ -870,7 +869,6 @@ const Board = () => {
               if (el.type === 'polygon') ctx.closePath();
               ctx.stroke();
           }
-                    ctx.restore();
           return;
       }
       if (el.type === 'triangle') {
@@ -1582,11 +1580,13 @@ const Board = () => {
         if (pos.y <= gMinY - pad - 4/zoom && Math.hypot(pos.x - groupRotCX, pos.y - groupRotCY) <= 14 / zoom) {
             const groupCX = (gMinX + gMaxX) / 2;
             const groupCY = (gMinY + gMaxY) / 2;
+            const selectedIdSet = new Set(selectedElementIds.map(String));
+            const selectedEls = elementsRef.current.filter(e => selectedIdSet.has(String(e.id)));
             dragContext.current = {
                 type: 'rotateGroup', startX: pos.x, startY: pos.y,
                 cx: groupCX, cy: groupCY,
                 startAngle: Math.atan2(pos.y - groupCY, pos.x - groupCX),
-                origElements: elementsRef.current.filter(e => selectedElementIds.includes(e.id)).map(e => JSON.parse(JSON.stringify(e))),
+                origElements: selectedEls.map(e => JSON.parse(JSON.stringify(e))),
                 origElementsState: JSON.parse(JSON.stringify(elementsRef.current)),
                 gMinX, gMinY, gMaxX, gMaxY,
                 origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
@@ -1601,11 +1601,13 @@ const Board = () => {
         const groupScaleCX = gMaxX + pad;
         const groupScaleCY = gMaxY + pad;
         if (pos.x >= gMaxX - 2/zoom && pos.y >= gMaxY - 2/zoom && Math.hypot(pos.x - groupScaleCX, pos.y - groupScaleCY) <= 14 / zoom) {
+          const selectedIdSet = new Set(selectedElementIds.map(String));
+          const selectedEls = elementsRef.current.filter(e => selectedIdSet.has(String(e.id)));
           dragContext.current = { 
             type: 'scale', startX: pos.x, startY: pos.y, 
             isMoved: false,
             gMinX, gMinY, gMaxX, gMaxY,
-            origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id)))),
+            origElements: selectedEls.map(el => JSON.parse(JSON.stringify(el))),
             origElementsState: JSON.parse(JSON.stringify(elementsRef.current)),
             origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
           };
@@ -1615,26 +1617,22 @@ const Board = () => {
           return;
         }
         // Check if any selected elements are locked - if ALL are locked, don't allow move
-        const anyUnlocked = selectedElementIds.some(id => !elementsRef.current.find(e => e.id === id)?.locked);
+        const selectedIdSet = new Set(selectedElementIds.map(String));
+        const anyUnlocked = elementsRef.current.some(e => selectedIdSet.has(String(e.id)) && !e.locked);
         const dragPad = 15 / zoom;
         
         const isInsideSelection = anyUnlocked && (
           (pos.x >= gMinX - dragPad && pos.x <= gMaxX + dragPad && pos.y >= gMinY - dragPad && pos.y <= gMaxY + dragPad) ||
           (activeLassoPathRef.current && isPointInPolygon(pos, activeLassoPathRef.current)) ||
-          selectedElementIds.some(id => {
-            const el = elementsRef.current.find(e => e.id === id);
-            return el && isPointInElement(pos, el, 20 / zoom);
-          })
+          elementsRef.current.some(el => selectedIdSet.has(String(el.id)) && isPointInElement(pos, el, 20 / zoom))
         );
 
         if (isInsideSelection) {
+          const selectedEls = elementsRef.current.filter(e => selectedIdSet.has(String(e.id)));
           dragContext.current = { 
             type: 'move', startX: pos.x, startY: pos.y, 
             isMoved: false,
-            origElements: selectedElementIds
-              .map(id => elementsRef.current.find(e => e.id === id))
-              .filter(Boolean)
-              .map(el => JSON.parse(JSON.stringify(el))),
+            origElements: selectedEls.map(el => JSON.parse(JSON.stringify(el))),
             origElementsState: JSON.parse(JSON.stringify(elementsRef.current)),
             origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
           };
@@ -1871,6 +1869,13 @@ const Board = () => {
         
         const isGroupOperation = dragContext.current.type === 'rotateGroup' || dragContext.current.type === 'scaleGroup';
         
+        const origMap = new Map();
+        if (dragContext.current.origElements) {
+            dragContext.current.origElements.forEach(oe => {
+                if (oe && oe.id !== undefined) origMap.set(String(oe.id), oe);
+            });
+        }
+        
         if (dragContext.current.type === 'rotateGroup') {
             dragContext.current.isMoved = true;
             const currentAngle = Math.atan2(pos.y - dragContext.current.cy, pos.x - dragContext.current.cx);
@@ -1882,8 +1887,7 @@ const Board = () => {
             }
             
             elementsRef.current = elementsRef.current.map(el => {
-                if (!selectedElementIds.includes(el.id)) return el;
-                const origEl = dragContext.current.origElements.find(e => e.id === el.id);
+                const origEl = origMap.get(String(el.id));
                 if (!origEl) return el;
                 const updated = { ...origEl };
                 
@@ -1926,14 +1930,14 @@ const Board = () => {
             });
             if (socket && socket.id && shouldEmit) {
               elementsRef.current.forEach(el => {
-                  if (selectedElementIds.includes(el.id)) {
+                  if (origMap.has(String(el.id))) {
                       socket.emit('update-element', { boardId: studentId, element: el });
                   }
               });
             }
         } else {
             elementsRef.current = elementsRef.current.map(el => {
-                const origEl = dragContext.current.origElements.find(e => e.id === el.id);
+                const origEl = origMap.get(String(el.id));
                 if (!origEl) return el;
                 const updated = { ...origEl };
 
@@ -2036,7 +2040,7 @@ const Board = () => {
 
             if (socket && socket.id && shouldEmit) {
                 elementsRef.current.forEach(el => {
-                    if (selectedElementIds.includes(el.id)) {
+                    if (origMap.has(String(el.id))) {
                         socket.emit('update-element', { boardId: studentId, element: el });
                     }
                 });
@@ -2239,7 +2243,7 @@ const Board = () => {
           if (socket && socket.id) {
             dragContext.current.origElements.forEach(origEl => {
                 if (!origEl) return;
-                const el = elementsRef.current.find(e => e.id === origEl.id);
+                const el = elementsRef.current.find(e => String(e.id) === String(origEl.id));
                 if (el) socket.emit('update-element', { boardId: studentId, element: el });
             });
           }
@@ -3106,6 +3110,9 @@ const Board = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-gray-100 overflow-hidden touch-none">
+      <div className="absolute top-1 right-2 z-50 pointer-events-none opacity-40 text-[10px] font-mono text-gray-500">
+        v2.5
+      </div>
       {!isReadonly && (
         <div 
           className="absolute top-4 left-4 z-50 flex flex-col md:flex-row gap-2 items-start"

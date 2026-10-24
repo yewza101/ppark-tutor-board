@@ -125,8 +125,7 @@ const isPointInElement = (pt, el, radius) => {
     checkPt = rotatePoint(pt.x, pt.y, cx, cy, -el.rotation);
   }
   
-  if (el.type === 'path') {
-    if (!el.points || el.points.length === 0) return false;
+  if (el.points && Array.isArray(el.points) && el.points.length > 0) {
     const pts = el.points.map(getPt);
     for (let i = 0; i < pts.length - 1; i++) {
       if (pts[i] !== null && pts[i+1] !== null) {
@@ -138,14 +137,8 @@ const isPointInElement = (pt, el, radius) => {
     if (pts.length > 0 && pts[pts.length - 1] !== null) {
       if (Math.hypot(checkPt.x - pts[pts.length - 1].x, checkPt.y - pts[pts.length - 1].y) < hitRadius) return true;
     }
-    return false;
-  } else if (el.type === 'polygon' || el.type === 'polyline') {
-    if (!el.points || el.points.length === 0) return false;
-    const pts = el.points.map(getPt).filter(Boolean);
-    for (let i = 0; i < pts.length; i++) {
-      const nextIdx = (i + 1) % pts.length;
-      if (el.type === 'polyline' && i === pts.length - 1) break;
-      if (distancePointToSegment(checkPt, pts[i], pts[nextIdx]) < hitRadius) return true;
+    if ((el.type === 'polygon' || el.type === 'triangle') && pts.length >= 3 && pts[0] && pts[pts.length - 1]) {
+      if (distancePointToSegment(checkPt, pts[pts.length - 1], pts[0]) < hitRadius) return true;
     }
     return false;
   } else if (el.type === 'triangle') {
@@ -329,18 +322,29 @@ const getElementBoundingBox = (el) => {
 };
 
 const isElementInLasso = (el, lassoPoints) => {
-  if (!el) return false;
+  if (!el || !lassoPoints || lassoPoints.length < 3) return false;
   
+  // Never lasso locked elements (e.g. background worksheet pages)
+  if (el.locked) return false;
+
   // 1. If element has points (paths, freehand strokes, polygons, polylines, snapped shapes):
   if (el.points && Array.isArray(el.points) && el.points.length > 0) {
     const anyPtInside = el.points.some(p => {
+      if (!p) return false;
       const pt = getPt(p);
       return pt && isPointInPolygon(pt, lassoPoints);
     });
     if (anyPtInside) return true;
   }
 
-  // 2. Check bounding box center and corners
+  // 2. Lines with x1, y1, x2, y2:
+  if (el.type === 'line' && el.x1 !== undefined && el.y1 !== undefined) {
+    if (isPointInPolygon({ x: el.x1, y: el.y1 }, lassoPoints)) return true;
+    if (isPointInPolygon({ x: el.x2, y: el.y2 }, lassoPoints)) return true;
+    if (isPointInPolygon({ x: (el.x1 + el.x2) / 2, y: (el.y1 + el.y2) / 2 }, lassoPoints)) return true;
+  }
+
+  // 3. Check bounding box center and corners
   const box = getElementBoundingBox(el);
   if (box.minX === undefined || isNaN(box.minX)) return false;
 
@@ -355,7 +359,16 @@ const isElementInLasso = (el, lassoPoints) => {
     { x: box.minX, y: box.maxY },
     { x: box.maxX, y: box.maxY }
   ];
-  return corners.some(c => isPointInPolygon(c, lassoPoints));
+  if (corners.some(c => isPointInPolygon(c, lassoPoints))) return true;
+
+  // 4. Also check if any lasso point is inside element box (e.g. lasso drawn inside large shape/text)
+  const anyLassoPtInside = lassoPoints.some(lp => {
+    const pt = getPt(lp);
+    return pt && pt.x >= box.minX && pt.x <= box.maxX && pt.y >= box.minY && pt.y <= box.maxY;
+  });
+  if (anyLassoPtInside) return true;
+
+  return false;
 };
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
@@ -1582,8 +1595,18 @@ const Board = () => {
         }
         // Check if any selected elements are locked - if ALL are locked, don't allow move
         const anyUnlocked = selectedElementIds.some(id => !elementsRef.current.find(e => e.id === id)?.locked);
+        const dragPad = 20 / zoom;
         
-        if (anyUnlocked && pos.x >= gMinX - pad && pos.x <= gMaxX + pad && pos.y >= gMinY - pad && pos.y <= gMaxY + pad) {
+        const isInsideSelection = anyUnlocked && (
+          (pos.x >= gMinX - dragPad && pos.x <= gMaxX + dragPad && pos.y >= gMinY - dragPad && pos.y <= gMaxY + dragPad) ||
+          (activeLassoPathRef.current && isPointInPolygon(pos, activeLassoPathRef.current)) ||
+          selectedElementIds.some(id => {
+            const el = elementsRef.current.find(e => e.id === id);
+            return el && isPointInElement(pos, el, 20 / zoom);
+          })
+        );
+
+        if (isInsideSelection) {
           dragContext.current = { 
             type: 'move', startX: pos.x, startY: pos.y, 
             isMoved: false,
@@ -1601,32 +1624,9 @@ const Board = () => {
         }
       }
       
-      // Try click-to-select: check if there's an element under the click
-      const hitIdx = elementsRef.current.findLastIndex(el => {
-        if (el.tool === 'eraser') return false;
-        if (currentTool === 'image' && el.type !== 'image') return false;
-        if (currentTool === 'select' && el.type === 'image') return false;
-        return isPointInElement(pos, el, 5);
-      });
-      if (hitIdx !== -1) {
-        const hitEl = elementsRef.current[hitIdx];
-        setSelectedElementIds([hitEl.id]);
-        activeLassoPathRef.current = null;
-        // Start move drag immediately (unless element is locked)
-        if (!hitEl.locked) {
-          startPoint.current = { x: e.clientX, y: e.clientY };
-          dragContext.current = { 
-            type: 'move', startX: pos.x, startY: pos.y, 
-            isMoved: false,
-            origElements: [JSON.parse(JSON.stringify(hitEl))],
-            origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
-          };
-          isDrawing.current = true;
-          e.target.setPointerCapture(e.pointerId);
-        }
-        return;
-      }
-      
+      // If no elements are selected, or user touched outside selection:
+      // Start drawing a lasso selection loop!
+      // (Single tap-to-select will be handled cleanly in onPointerUp if user just taps without dragging)
       setSelectedElementIds([]);
       activeLassoPathRef.current = null;
       currentPath.current = { id: generateId(), type: 'lasso', tool: 'select', points: [pos] };
@@ -1924,31 +1924,26 @@ const Board = () => {
                   }
               });
             } else if (dragContext.current.type === 'move') {
-              if (el.type === 'path' || el.type === 'polygon' || el.type === 'polyline') {
-                 if (Array.isArray(origEl.points)) {
-                   el.points = origEl.points.map(origPt => {
-                     if (origPt === null || origPt === undefined) return null;
-                     const pt = getPt(origPt);
-                     if (!pt) return null;
-                     return {
-                       x: pt.x + dx,
-                       y: pt.y + dy,
-                       ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
-                     };
-                   });
-                   el.bbox = null;
-                   el.path2d = null;
-                 }
-              } else {
-                 el.x = origEl.x + dx;
-                 el.y = origEl.y + dy;
-                 if (el.type === 'line') {
-                   el.x1 = origEl.x1 + dx;
-                   el.y1 = origEl.y1 + dy;
-                   el.x2 = origEl.x2 + dx;
-                   el.y2 = origEl.y2 + dy;
-                 }
+              if (Array.isArray(origEl.points)) {
+                el.points = origEl.points.map(origPt => {
+                  if (origPt === null || origPt === undefined) return null;
+                  const pt = getPt(origPt);
+                  if (!pt) return null;
+                  return {
+                    x: pt.x + dx,
+                    y: pt.y + dy,
+                    ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
+                  };
+                });
+                el.bbox = null;
+                el.path2d = null;
               }
+              if (origEl.x !== undefined) el.x = origEl.x + dx;
+              if (origEl.y !== undefined) el.y = origEl.y + dy;
+              if (origEl.x1 !== undefined) el.x1 = origEl.x1 + dx;
+              if (origEl.y1 !== undefined) el.y1 = origEl.y1 + dy;
+              if (origEl.x2 !== undefined) el.x2 = origEl.x2 + dx;
+              if (origEl.y2 !== undefined) el.y2 = origEl.y2 + dy;
             } else if (dragContext.current.type === 'circle_center') {
               if (el.type === 'circle') {
                  el.x = origEl.x + dx;
@@ -1990,35 +1985,30 @@ const Board = () => {
                const newW = Math.max(20, origW + dx);
                const scale = origW === 0 ? 1 : newW / origW;
                
-               if (el.type === 'path' || el.type === 'polygon' || el.type === 'polyline') {
-                 if (Array.isArray(origEl.points)) {
-                   el.points = origEl.points.map(origPt => {
-                     if (origPt === null || origPt === undefined) return null;
-                     const pt = getPt(origPt);
-                     if (!pt) return null;
-                     return { 
-                       x: dragContext.current.gMinX + (pt.x - dragContext.current.gMinX) * scale, 
-                       y: dragContext.current.gMinY + (pt.y - dragContext.current.gMinY) * scale,
-                       ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
-                     };
-                   });
-                   el.size = (origEl.size || 5) * scale;
-                   el.bbox = null;
-                   el.path2d = null;
-                 }
-               } else {
-                 el.x = dragContext.current.gMinX + (origEl.x - dragContext.current.gMinX) * scale;
-                 el.y = dragContext.current.gMinY + (origEl.y - dragContext.current.gMinY) * scale;
-                 if (el.type === 'line') {
-                   el.x1 = dragContext.current.gMinX + (origEl.x1 - dragContext.current.gMinX) * scale;
-                   el.y1 = dragContext.current.gMinY + (origEl.y1 - dragContext.current.gMinY) * scale;
-                   el.x2 = dragContext.current.gMinX + (origEl.x2 - dragContext.current.gMinX) * scale;
-                   el.y2 = dragContext.current.gMinY + (origEl.y2 - dragContext.current.gMinY) * scale;
-                 }
-                 if (el.w !== undefined) el.w = origEl.w * scale;
-                 if (el.h !== undefined) el.h = origEl.h * scale;
-                 if (el.size !== undefined) el.size = origEl.size * scale;
+               if (Array.isArray(origEl.points)) {
+                 el.points = origEl.points.map(origPt => {
+                   if (origPt === null || origPt === undefined) return null;
+                   const pt = getPt(origPt);
+                   if (!pt) return null;
+                   return { 
+                     x: dragContext.current.gMinX + (pt.x - dragContext.current.gMinX) * scale, 
+                     y: dragContext.current.gMinY + (pt.y - dragContext.current.gMinY) * scale,
+                     ...(origPt.pressure !== undefined ? { pressure: origPt.pressure } : {})
+                   };
+                 });
+                 el.size = (origEl.size || 5) * scale;
+                 el.bbox = null;
+                 el.path2d = null;
                }
+               if (origEl.x !== undefined) el.x = dragContext.current.gMinX + (origEl.x - dragContext.current.gMinX) * scale;
+               if (origEl.y !== undefined) el.y = dragContext.current.gMinY + (origEl.y - dragContext.current.gMinY) * scale;
+               if (origEl.x1 !== undefined) el.x1 = dragContext.current.gMinX + (origEl.x1 - dragContext.current.gMinX) * scale;
+               if (origEl.y1 !== undefined) el.y1 = dragContext.current.gMinY + (origEl.y1 - dragContext.current.gMinY) * scale;
+               if (origEl.x2 !== undefined) el.x2 = dragContext.current.gMinX + (origEl.x2 - dragContext.current.gMinX) * scale;
+               if (origEl.y2 !== undefined) el.y2 = dragContext.current.gMinY + (origEl.y2 - dragContext.current.gMinY) * scale;
+               if (origEl.w !== undefined) el.w = origEl.w * scale;
+               if (origEl.h !== undefined) el.h = origEl.h * scale;
+               if (origEl.size !== undefined) el.size = origEl.size * scale;
             }
             if (socket && socket.id && shouldEmit) {
               socket.emit('update-element', { boardId: studentId, element: el });
@@ -2075,10 +2065,7 @@ const Board = () => {
         }
         
         if (shouldEmit) lastEmitTime.current = now;
-        setElements(prev => {
-            elementsRef.current = [...prev];
-            return elementsRef.current;
-        });
+        setElements([...elementsRef.current]);
         requestAnimationFrame(() => { if (fullRedrawRef.current) fullRedrawRef.current(); });
         return;
       }
@@ -2199,8 +2186,7 @@ const Board = () => {
       if (lassoPoints.length > 2) {
         const selectedIds = [];
         elementsRef.current.forEach(el => {
-          if (currentTool === 'image' && el.type !== 'image') return;
-          if (currentTool === 'select' && el.type === 'image') return;
+          if (el.locked) return; // Never select locked elements (background pages/sheets)
           if (isElementInLasso(el, lassoPoints)) {
             selectedIds.push(el.id);
           }
@@ -2216,9 +2202,8 @@ const Board = () => {
         const tapPos = lassoPoints[0];
         const hitIdx = elementsRef.current.findLastIndex(el => {
           if (el.tool === 'eraser') return false;
-          if (currentTool === 'image' && el.type !== 'image') return false;
-          if (currentTool === 'select' && el.type === 'image') return false;
-          return isPointInElement(tapPos, el, 5);
+          if (el.locked) return false;
+          return isPointInElement(tapPos, el, 15 / zoom);
         });
         if (hitIdx !== -1) {
           const hitEl = elementsRef.current[hitIdx];
@@ -2242,6 +2227,7 @@ const Board = () => {
       } else {
           setPastStates(p => [...p, dragContext.current.origElementsState || elementsRef.current]);
           setFutureStates([]);
+          setElements([...elementsRef.current]);
           if (socket && socket.id) {
             dragContext.current.origElements.forEach(origEl => {
                 if (!origEl) return;
@@ -2253,6 +2239,7 @@ const Board = () => {
       dragContext.current = null;
       isDrawing.current = false;
       setDragEndTick(t => t + 1);
+      if (fullRedrawRef.current) fullRedrawRef.current();
     }
 
     if (isDrawing.current && currentPath.current) {

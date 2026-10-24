@@ -1486,11 +1486,11 @@ const Board = () => {
         if (selectedElementIds.length === 1) {
             const el = elementsRef.current.find(e => e.id === selectedElementIds[0]);
             if (el && (el.type === 'polygon' || el.isSnappedAngle || el.isSnapped || el.type === 'polyline')) {
-                const hs = 25 / zoom;
+                const vertexRadius = 12 / zoom;
                 let clickedVertex = -1;
                 let localPos = pos;
                 for (let i = 0; i < el.points.length; i++) {
-                    if (Math.hypot(localPos.x - el.points[i].x, localPos.y - el.points[i].y) <= hs) {
+                    if (Math.hypot(localPos.x - el.points[i].x, localPos.y - el.points[i].y) <= vertexRadius) {
                         clickedVertex = i;
                         break;
                     }
@@ -1498,7 +1498,8 @@ const Board = () => {
                 if (clickedVertex !== -1) {
                     dragContext.current = {
                         type: 'vertex', vertexIndex: clickedVertex, startX: pos.x, startY: pos.y,
-                        origElements: [JSON.parse(JSON.stringify(el))]
+                        origElements: [JSON.parse(JSON.stringify(el))],
+                        origElementsState: JSON.parse(JSON.stringify(elementsRef.current))
                     };
                     startPoint.current = { x: e.clientX, y: e.clientY };
                     isDrawing.current = true;
@@ -1514,12 +1515,14 @@ const Board = () => {
                 const cx = el.x + el.w / 2;
                 const cy = el.y - pad - 20/zoom;
                 
-                if (Math.hypot(localPos.x - cx, localPos.y - cy) <= hs) {
+                // Rotate handle strictly above the box
+                if (localPos.y <= el.y - pad - 4/zoom && Math.hypot(localPos.x - cx, localPos.y - cy) <= 14/zoom) {
                     dragContext.current = {
                         type: 'rotate', startX: pos.x, startY: pos.y,
                         origAngle: el.rotation || 0,
                         cx: el.x + el.w/2, cy: el.y + el.h/2,
-                        origElements: [JSON.parse(JSON.stringify(el))]
+                        origElements: [JSON.parse(JSON.stringify(el))],
+                        origElementsState: JSON.parse(JSON.stringify(elementsRef.current))
                     };
                     startPoint.current = { x: e.clientX, y: e.clientY };
                     isDrawing.current = true;
@@ -1527,13 +1530,16 @@ const Board = () => {
                     return;
                 }
                 
-                if (localPos.x >= el.x + el.w + pad - hs && localPos.x <= el.x + el.w + pad + hs &&
-                    localPos.y >= el.y + el.h + pad - hs && localPos.y <= el.y + el.h + pad + hs) {
+                // Scale handle at bottom right corner
+                const scaleCX = el.x + el.w + pad;
+                const scaleCY = el.y + el.h + pad;
+                if (localPos.x >= el.x + el.w - 2/zoom && localPos.y >= el.y + el.h - 2/zoom && Math.hypot(localPos.x - scaleCX, localPos.y - scaleCY) <= 14/zoom) {
                     dragContext.current = {
                         type: 'scale', startX: pos.x, startY: pos.y,
                         isMoved: false,
                         gMinX: el.x, gMinY: el.y, gMaxX: el.x + el.w, gMaxY: el.y + el.h,
                         origElements: [JSON.parse(JSON.stringify(el))],
+                        origElementsState: JSON.parse(JSON.stringify(elementsRef.current)),
                         origLassoPath: null
                     };
                     startPoint.current = { x: e.clientX, y: e.clientY };
@@ -1543,11 +1549,12 @@ const Board = () => {
                 }
                 
                 if (!el.locked) {
-                    if (localPos.x >= el.x - pad && localPos.x <= el.x + el.w + pad && localPos.y >= el.y - pad && localPos.y <= el.y + el.h + pad) {
+                    if (localPos.x >= el.x - 15/zoom && localPos.x <= el.x + el.w + 15/zoom && localPos.y >= el.y - 15/zoom && localPos.y <= el.y + el.h + 15/zoom) {
                         dragContext.current = {
                             type: 'move', startX: pos.x, startY: pos.y,
                             isMoved: false,
                             origElements: [JSON.parse(JSON.stringify(el))],
+                            origElementsState: JSON.parse(JSON.stringify(elementsRef.current)),
                             origLassoPath: null
                         };
                         startPoint.current = { x: e.clientX, y: e.clientY };
@@ -1559,11 +1566,10 @@ const Board = () => {
             }
         }
         
-        // Fallback for group rotate (or single path/line)
-        const hsRotate = 25 / zoom;
+        // Rotate handle for group (or single path/line/shape) - MUST be strictly above the selection box
         const groupRotCX = (gMinX + gMaxX) / 2;
         const groupRotCY = gMinY - pad - 20/zoom;
-        if (Math.hypot(pos.x - groupRotCX, pos.y - groupRotCY) <= hsRotate) {
+        if (pos.y <= gMinY - pad - 4/zoom && Math.hypot(pos.x - groupRotCX, pos.y - groupRotCY) <= 14 / zoom) {
             const groupCX = (gMinX + gMaxX) / 2;
             const groupCY = (gMinY + gMaxY) / 2;
             dragContext.current = {
@@ -1571,6 +1577,7 @@ const Board = () => {
                 cx: groupCX, cy: groupCY,
                 startAngle: Math.atan2(pos.y - groupCY, pos.x - groupCX),
                 origElements: elementsRef.current.filter(e => selectedElementIds.includes(e.id)).map(e => JSON.parse(JSON.stringify(e))),
+                origElementsState: JSON.parse(JSON.stringify(elementsRef.current)),
                 gMinX, gMinY, gMaxX, gMaxY,
                 origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
             };
@@ -1580,12 +1587,16 @@ const Board = () => {
             return;
         }
 
-        if (pos.x >= gMaxX + pad - hs && pos.x <= gMaxX + pad + hs && pos.y >= gMaxY + pad - hs && pos.y <= gMaxY + pad + hs) {
+        // Scale handle for group - MUST be at bottom-right corner or outside, not inside selection
+        const groupScaleCX = gMaxX + pad;
+        const groupScaleCY = gMaxY + pad;
+        if (pos.x >= gMaxX - 2/zoom && pos.y >= gMaxY - 2/zoom && Math.hypot(pos.x - groupScaleCX, pos.y - groupScaleCY) <= 14 / zoom) {
           dragContext.current = { 
             type: 'scale', startX: pos.x, startY: pos.y, 
             isMoved: false,
             gMinX, gMinY, gMaxX, gMaxY,
             origElements: selectedElementIds.map(id => JSON.parse(JSON.stringify(elementsRef.current.find(e => e.id === id)))),
+            origElementsState: JSON.parse(JSON.stringify(elementsRef.current)),
             origLassoPath: activeLassoPathRef.current ? JSON.parse(JSON.stringify(activeLassoPathRef.current)) : null
           };
           startPoint.current = { x: e.clientX, y: e.clientY };
@@ -1595,7 +1606,7 @@ const Board = () => {
         }
         // Check if any selected elements are locked - if ALL are locked, don't allow move
         const anyUnlocked = selectedElementIds.some(id => !elementsRef.current.find(e => e.id === id)?.locked);
-        const dragPad = 20 / zoom;
+        const dragPad = 15 / zoom;
         
         const isInsideSelection = anyUnlocked && (
           (pos.x >= gMinX - dragPad && pos.x <= gMaxX + dragPad && pos.y >= gMinY - dragPad && pos.y <= gMaxY + dragPad) ||
@@ -1865,29 +1876,40 @@ const Board = () => {
                     const origEl = dragContext.current.origElements.find(e => e.id === el.id);
                     if (!origEl) return;
                     
-                    if (el.type === 'path') {
+                    if (origEl.points && Array.isArray(origEl.points)) {
                         el.points = origEl.points.map(p => {
-                            if (p === null) return null;
-                            return rotatePoint(p.x, p.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                            if (!p) return null;
+                            const pt = getPt(p);
+                            if (!pt) return null;
+                            const rotated = rotatePoint(pt.x, pt.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                            return {
+                                x: rotated.x,
+                                y: rotated.y,
+                                ...(p.pressure !== undefined ? { pressure: p.pressure } : {})
+                            };
                         });
                         el.bbox = null;
                         el.path2d = null;
-                    } else if (el.type === 'line') {
+                    }
+                    if (origEl.x1 !== undefined && origEl.y1 !== undefined && origEl.x2 !== undefined && origEl.y2 !== undefined) {
                         const p1 = rotatePoint(origEl.x1, origEl.y1, dragContext.current.cx, dragContext.current.cy, angleDelta);
                         const p2 = rotatePoint(origEl.x2, origEl.y2, dragContext.current.cx, dragContext.current.cy, angleDelta);
                         el.x1 = p1.x; el.y1 = p1.y;
                         el.x2 = p2.x; el.y2 = p2.y;
-                    } else if (el.type === 'circle') {
-                        const newCenter = rotatePoint(origEl.x, origEl.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                        el.x = newCenter.x;
-                        el.y = newCenter.y;
-                    } else {
-                        const origCX = origEl.x + (origEl.w || 0)/2;
-                        const origCY = origEl.y + (origEl.h || 0)/2;
-                        const newCenter = rotatePoint(origCX, origCY, dragContext.current.cx, dragContext.current.cy, angleDelta);
-                        el.x = newCenter.x - (origEl.w || 0)/2;
-                        el.y = newCenter.y - (origEl.h || 0)/2;
-                        el.rotation = (origEl.rotation || 0) + angleDelta;
+                    }
+                    if (!origEl.points) {
+                        if (el.type === 'circle') {
+                            const newCenter = rotatePoint(origEl.x, origEl.y, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                            el.x = newCenter.x;
+                            el.y = newCenter.y;
+                        } else if (origEl.x !== undefined && origEl.y !== undefined) {
+                            const origCX = origEl.x + (origEl.w || 0)/2;
+                            const origCY = origEl.y + (origEl.h || 0)/2;
+                            const newCenter = rotatePoint(origCX, origCY, dragContext.current.cx, dragContext.current.cy, angleDelta);
+                            el.x = newCenter.x - (origEl.w || 0)/2;
+                            el.y = newCenter.y - (origEl.h || 0)/2;
+                            el.rotation = (origEl.rotation || 0) + angleDelta;
+                        }
                     }
                 }
             });

@@ -1866,6 +1866,7 @@ const Board = () => {
         
         const dx = pos.x - dragContext.current.startX;
         const dy = pos.y - dragContext.current.startY;
+        const shouldEmit = now - lastEmitTime.current > 60; // ~16fps drag throttle for smooth network sync
         
         const isGroupOperation = dragContext.current.type === 'rotateGroup' || dragContext.current.type === 'scaleGroup';
         

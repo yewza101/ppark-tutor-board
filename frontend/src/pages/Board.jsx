@@ -1656,14 +1656,18 @@ const Board = () => {
 
     if (currentTool === 'eraser-object') {
       const pos = getMousePos(e);
-      checkObjectEraserCollision(pos);
+      checkObjectEraserCollision(pos, false);
+      lastEraserPos.current = pos;
       isDrawing.current = true;
       e.target.setPointerCapture(e.pointerId);
       return;
     }
     if (currentTool === 'eraser') {
       const pos = getMousePos(e);
+      setPastStates(prev => [...prev, elementsRef.current]);
+      setFutureStates([]);
       erasePixel(pos);
+      checkObjectEraserCollision(pos, true);
       lastEraserPos.current = pos;
       isDrawing.current = true;
       e.target.setPointerCapture(e.pointerId);
@@ -1704,59 +1708,79 @@ const Board = () => {
 
   const erasePixel = (pos) => {
     let changed = false;
+    const elementsToDelete = [];
     
-    for (let j = 0; j < elementsRef.current.length; j++) {
-      const el = elementsRef.current[j];
-      
+    const nextElements = elementsRef.current.map(el => {
       if (el.type === 'path' && el.tool !== 'eraser') {
         const box = getElementBoundingBox(el);
+        const pad = Math.max(brushSize, 20);
         if (box.minX !== undefined) {
-            const pad = brushSize;
             if (pos.x < box.minX - pad || pos.x > box.maxX + pad || pos.y < box.minY - pad || pos.y > box.maxY + pad) {
-                continue;
+                return el;
             }
         }
         
         let pathMutated = false;
-        const eraserRadius = (brushSize / 2) + (el.size ? el.size / 2 : 2.5);
+        const eraserRadius = Math.max(brushSize / 2, 8) + (el.size ? el.size / 2 : 2.5);
+        const newPoints = [...el.points];
         
-        for (let i = 0; i < el.points.length; i++) {
-           if (el.points[i] === null) continue;
+        for (let i = 0; i < newPoints.length; i++) {
+           if (newPoints[i] === null) continue;
+           const ptI = getPt(newPoints[i]);
+           if (!ptI) continue;
            
-           let isPointErased = Math.hypot(el.points[i].x - pos.x, el.points[i].y - pos.y) < eraserRadius;
+           let isPointErased = Math.hypot(ptI.x - pos.x, ptI.y - pos.y) < eraserRadius;
            let isSegmentErased = false;
            
-           if (!isPointErased && i > 0 && el.points[i-1] !== null) {
-               if (distancePointToSegment(pos, el.points[i-1], el.points[i]) < eraserRadius) {
+           if (!isPointErased && i > 0 && newPoints[i-1] !== null) {
+               const ptPrev = getPt(newPoints[i-1]);
+               if (ptPrev && distancePointToSegment(pos, ptPrev, ptI) < eraserRadius) {
                    isSegmentErased = true;
                }
            }
            
            if (isPointErased || isSegmentErased) {
-               el.points[i] = null;
-               el.path2d = null; // Invalidate cached path
+               newPoints[i] = null;
                pathMutated = true;
            }
         }
         
         if (pathMutated) {
             changed = true;
-            if (socket && socket.id) socket.emit('update-element', { boardId: studentId, element: el });
+            const hasVisible = newPoints.some(p => p !== null);
+            if (!hasVisible) {
+                elementsToDelete.push(el.id);
+                return null;
+            }
+            const updatedEl = { ...el, points: newPoints, bbox: null, path2d: null };
+            if (socket && socket.id) {
+                socket.emit('update-element', { boardId: studentId, element: updatedEl });
+            }
+            return updatedEl;
         }
       }
+      return el;
+    }).filter(Boolean);
+    
+    if (elementsToDelete.length > 0 && socket && socket.id) {
+        elementsToDelete.forEach(id => {
+            socket.emit('delete-element', { boardId: studentId, elementId: id });
+        });
     }
     
     if (changed) {
-      setElements(prev => {
-        elementsRef.current = [...prev];
-        return elementsRef.current;
-      });
+      elementsRef.current = nextElements;
+      setElements(nextElements);
       if (fullRedrawRef.current) fullRedrawRef.current();
     }
   };
 
-  const checkObjectEraserCollision = (pos) => {
-    const elIdx = elementsRef.current.findLastIndex(el => !el.locked && el.type !== 'image' && isPointInElement(pos, el, Math.max(brushSize || 10, 18)));
+  const checkObjectEraserCollision = (pos, shapesOnly = false) => {
+    const elIdx = elementsRef.current.findLastIndex(el => {
+      if (!el || el.locked || el.type === 'image') return false;
+      if (shapesOnly && el.type === 'path') return false; // Ignore pencil/path strokes in shapes-only mode
+      return isPointInElement(pos, el, Math.max(brushSize || 10, 18));
+    });
     if (elIdx !== -1) {
       const deletedEl = elementsRef.current[elIdx];
       if (deletedEl.id) {
@@ -2095,10 +2119,10 @@ const Board = () => {
             x: lastEraserPos.current.x + (pos.x - lastEraserPos.current.x) * (i / steps),
             y: lastEraserPos.current.y + (pos.y - lastEraserPos.current.y) * (i / steps)
           };
-          checkObjectEraserCollision(interpPos);
+          checkObjectEraserCollision(interpPos, false);
         }
       } else {
-        checkObjectEraserCollision(pos);
+        checkObjectEraserCollision(pos, false);
       }
       lastEraserPos.current = pos;
       return;
@@ -2106,18 +2130,18 @@ const Board = () => {
     if (currentTool === 'eraser') {
       if (lastEraserPos.current) {
           const dist = Math.hypot(pos.x - lastEraserPos.current.x, pos.y - lastEraserPos.current.y);
-          const steps = Math.max(1, Math.ceil(dist / (brushSize / 4)));
+          const steps = Math.max(1, Math.ceil(dist / (Math.max(brushSize, 10) / 4)));
           for (let i = 1; i <= steps; i++) {
              const interpPos = {
                  x: lastEraserPos.current.x + (pos.x - lastEraserPos.current.x) * (i / steps),
                  y: lastEraserPos.current.y + (pos.y - lastEraserPos.current.y) * (i / steps)
              };
              erasePixel(interpPos);
-             checkObjectEraserCollision(interpPos);
+             checkObjectEraserCollision(interpPos, true);
           }
       } else {
           erasePixel(pos);
-          checkObjectEraserCollision(pos);
+          checkObjectEraserCollision(pos, true);
       }
       lastEraserPos.current = pos;
       return;
@@ -3236,7 +3260,7 @@ const Board = () => {
         ref={containerRef} 
         style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'none' }}
         className={`relative flex-1 w-full h-full select-none touch-none ${
-          isPanning ? 'cursor-grabbing' : (currentTool === 'pan' ? 'cursor-grab' : (currentTool === 'pencil' || currentTool === 'eraser' ? 'cursor-crosshair' : 'cursor-default'))
+          isPanning ? 'cursor-grabbing' : (currentTool === 'pan' ? 'cursor-grab' : (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'eraser-object' ? 'cursor-crosshair' : 'cursor-default'))
         }`}
       >
         <canvas

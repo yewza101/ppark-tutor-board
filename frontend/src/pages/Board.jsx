@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
@@ -386,6 +386,9 @@ const Board = () => {
   const [myRedoStack, setMyRedoStack] = useState([]);
   const handleUndoRef = useRef(null);
   const handleRedoRef = useRef(null);
+  const lastTeacherViewportRef = useRef(null);
+  const hasAutoTrackedRef = useRef(false);
+  const [teacherTrackPing, setTeacherTrackPing] = useState(null);
   
   // Viewport state
   const [zoom, setZoom] = useState(1);
@@ -524,7 +527,8 @@ const Board = () => {
           width: viewportSize.w,
           height: viewportSize.h,
           socketId: socket.id,
-          isPresentationMode
+          isPresentationMode,
+          role: user?.role || 'student'
         });
       };
 
@@ -550,7 +554,8 @@ const Board = () => {
           width: viewportSize.w,
           height: viewportSize.h,
           socketId: socket.id,
-          isPresentationMode
+          isPresentationMode,
+          role: user?.role || 'student'
         });
       }
     }, 25000);
@@ -805,7 +810,14 @@ const Board = () => {
     newSocket.on('cursor-move', (data) => {
       setCursors(prev => ({
         ...prev,
-        [data.socketId]: { x: data.x, y: data.y, username: data.username, color: data.color }
+        [data.socketId]: { 
+          x: data.x, 
+          y: data.y, 
+          username: data.username, 
+          color: data.color,
+          role: data.role,
+          isTeacher: data.isTeacher || data.role === 'admin' || data.color === '#ef4444'
+        }
       }));
     });
 
@@ -818,6 +830,9 @@ const Board = () => {
     });
 
     newSocket.on('viewport-update', (data) => {
+      if (data.role === 'admin' || data.isPresentationMode) {
+        lastTeacherViewportRef.current = data;
+      }
       // If the admin is presenting, force students to follow their viewport
       if (data.isPresentationMode && user?.role !== 'admin') {
         const adminCenterX = -data.pan.x / data.zoom + data.width / (2 * data.zoom);
@@ -1905,7 +1920,9 @@ const Board = () => {
         username: user?.username || 'Unknown',
         x: Math.round(pos.x),
         y: Math.round(pos.y),
-        color: user?.role === 'admin' ? '#ef4444' : '#3b82f6'
+        color: user?.role === 'admin' ? '#ef4444' : '#3b82f6',
+        role: user?.role || 'student',
+        isTeacher: user?.role === 'admin'
       });
       lastCursorEmitTime.current = now;
       lastCursorPosRef.current = pos;
@@ -3116,9 +3133,134 @@ const Board = () => {
             zoom
         ));
     } else {
-        alert('à¸¢à¸±à¸‡à¸«à¸²à¹€à¸¡à¸²à¸ªà¹Œà¸‚à¸­à¸‡à¸™à¸±à¸à¹€à¸£à¸µà¸¢à¸™à¹„à¸¡à¹ˆà¹€à¸ˆà¸­à¸„à¸£à¸±à¸š (à¸™à¸±à¸à¹€à¸£à¸µà¸¢à¸™à¸­à¸²à¸ˆà¸ˆà¸°à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸‚à¸¢à¸±à¸šà¹€à¸¡à¸²à¸ªà¹Œà¹ƒà¸™à¸•à¸­à¸™à¸™à¸µà¹‰)');
+        alert('ยังไม่พบตำแหน่งของนักเรียนครับ (นักเรียนอาจจะยังไม่ได้ขยับเมาส์ในตอนนี้)');
     }
   };
+
+  // Track Teacher system for students
+  const trackTeacher = (showNotification = true) => {
+    if (!containerRef.current) return false;
+    const viewportWidth = containerRef.current.clientWidth;
+    const viewportHeight = containerRef.current.clientHeight;
+
+    let teacherPos = null;
+
+    // 1. Try to find active teacher cursor
+    const activeTeacherCursor = Object.values(cursors).find(c => 
+      c.isTeacher || c.role === 'admin' || c.color === '#ef4444' || (c.username && (c.username.toLowerCase().includes('ครู') || c.username.toLowerCase() === 'admin'))
+    );
+    if (activeTeacherCursor) {
+      teacherPos = { x: activeTeacherCursor.x, y: activeTeacherCursor.y };
+    }
+
+    // 2. Try remote drawing path from teacher in progress
+    if (!teacherPos) {
+      const pathIds = Object.keys(remotePaths.current);
+      if (pathIds.length > 0) {
+        const path = remotePaths.current[pathIds[0]];
+        if (path && path.points && path.points.length > 0) {
+          const lastPoint = path.points[path.points.length - 1];
+          if (lastPoint) {
+            teacherPos = { x: lastPoint.x, y: lastPoint.y };
+          }
+        }
+      }
+    }
+
+    // 3. Try last known teacher viewport
+    if (!teacherPos && lastTeacherViewportRef.current) {
+      const tv = lastTeacherViewportRef.current;
+      const teacherCenterX = -tv.pan.x / tv.zoom + (tv.width || viewportWidth) / (2 * tv.zoom);
+      const teacherCenterY = -tv.pan.y / tv.zoom + (tv.height || viewportHeight) / (2 * tv.zoom);
+      teacherPos = { x: teacherCenterX, y: teacherCenterY };
+    }
+
+    // 4. Try most recent element drawn by teacher (or not by this student)
+    if (!teacherPos && elementsRef.current && elementsRef.current.length > 0) {
+      const myUsername = user?.username || String(user?.id);
+      const teacherEls = elementsRef.current.filter(el => !el.isPage && el.author && el.author !== myUsername);
+      if (teacherEls.length > 0) {
+        const lastEl = teacherEls[teacherEls.length - 1];
+        const box = getElementBoundingBox(lastEl);
+        if (box && box.minX !== undefined) {
+          teacherPos = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+        }
+      }
+    }
+
+    // 5. Fallback: most recent non-page element on the board overall
+    if (!teacherPos && elementsRef.current && elementsRef.current.length > 0) {
+      const nonPageEls = elementsRef.current.filter(el => !el.isPage);
+      const targetEl = nonPageEls.length > 0 ? nonPageEls[nonPageEls.length - 1] : elementsRef.current[elementsRef.current.length - 1];
+      if (targetEl) {
+        const box = getElementBoundingBox(targetEl);
+        if (box && box.minX !== undefined) {
+          teacherPos = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+        }
+      }
+    }
+
+    if (teacherPos) {
+      const targetPan = clampPan(
+        viewportWidth / 2 - teacherPos.x * zoom,
+        viewportHeight / 2 - teacherPos.y * zoom,
+        zoom
+      );
+      setPan(targetPan);
+      setTeacherTrackPing({ x: teacherPos.x, y: teacherPos.y, key: Date.now() });
+      setTimeout(() => setTeacherTrackPing(null), 3000);
+      return true;
+    } else {
+      if (showNotification) {
+        alert('ยังไม่พบตำแหน่งของคุณครูหรือเนื้อหาบนกระดานครับ');
+      }
+      return false;
+    }
+  };
+
+  // Reset auto-track status when studentId changes
+  useEffect(() => {
+    hasAutoTrackedRef.current = false;
+    lastTeacherViewportRef.current = null;
+  }, [studentId]);
+
+  // Auto-track teacher on initial join for students
+  useEffect(() => {
+    if (user?.role === 'admin' || hasAutoTrackedRef.current) return;
+    
+    const hasTeacherCursor = Object.values(cursors).some(c => 
+      c.isTeacher || c.role === 'admin' || c.color === '#ef4444' || (c.username && (c.username.toLowerCase().includes('ครู') || c.username.toLowerCase() === 'admin'))
+    );
+    const hasElements = elements.length > 0;
+    const hasTeacherViewport = !!lastTeacherViewportRef.current;
+
+    if (hasTeacherCursor || hasTeacherViewport || hasElements) {
+      const timer = setTimeout(() => {
+        if (!hasAutoTrackedRef.current) {
+          const success = trackTeacher(false);
+          if (success) {
+            hasAutoTrackedRef.current = true;
+          }
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [elements, cursors, user?.role]);
+
+  const teacherCursor = Object.values(cursors).find(c => 
+    c.isTeacher || c.role === 'admin' || c.color === '#ef4444' || (c.username && (c.username.toLowerCase().includes('ครู') || c.username.toLowerCase() === 'admin'))
+  );
+
+  const isTeacherOnline = !!teacherCursor || !!lastTeacherViewportRef.current;
+
+  const isTeacherOffScreen = useMemo(() => {
+    if (!teacherCursor || !containerRef.current) return false;
+    const screenX = teacherCursor.x * zoom + pan.x;
+    const screenY = teacherCursor.y * zoom + pan.y;
+    const w = containerRef.current.clientWidth;
+    const h = containerRef.current.clientHeight;
+    return screenX < 20 || screenX > w - 20 || screenY < 20 || screenY > h - 20;
+  }, [teacherCursor, zoom, pan]);
 
   const handleChangeSelectionColor = (newColor) => {
       let changed = false;
@@ -3296,13 +3438,37 @@ const Board = () => {
                     ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100' 
                     : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
                 }`}
-                title={studentId === 'teacher_board' ? 'à¸à¸¥à¸±à¸šà¹„à¸›à¸šà¸­à¸£à¹Œà¸”à¸‚à¸­à¸‡à¸‰à¸±à¸™' : 'à¹„à¸›à¸—à¸µà¹ˆà¸šà¸­à¸£à¹Œà¸”à¸‚à¸­à¸‡à¸„à¸£à¸¹'}
+                title={studentId === 'teacher_board' ? 'กลับกระดานส่วนตัว' : 'ไปที่บอร์ดของครู (Teacher Board)'}
               >
                 <ArrowLeft size={20} className={studentId === 'teacher_board' ? '' : 'rotate-180'} />
                 <span className="hidden md:inline">
-                  {studentId === 'teacher_board' ? 'à¸à¸¥à¸±à¸šà¸à¸£à¸°à¸”à¸²à¸™à¸ªà¹ˆà¸§à¸™à¸•à¸±à¸§' : 'à¹„à¸›à¸—à¸µà¹ˆà¸šà¸­à¸£à¹Œà¸”à¸‚à¸­à¸‡à¸„à¸£à¸¹ (Teacher Board)'}
+                  {studentId === 'teacher_board' ? 'กลับกระดานส่วนตัว' : 'ไปที่บอร์ดของครู (Teacher Board)'}
                 </span>
               </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  trackTeacher(true);
+                }}
+                className={`flex items-center gap-2 px-3.5 py-2 backdrop-blur shadow-lg border rounded-2xl font-medium transition-all ${
+                  isTeacherOnline 
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 hover:shadow-emerald-100' 
+                    : 'bg-white/95 text-gray-700 border-gray-200 hover:bg-gray-50'
+                }`}
+                title="หาตำแหน่งคุณครูบนกระดาน (Track Teacher)"
+              >
+                <span className="relative flex h-2.5 w-2.5">
+                  {isTeacherOnline && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isTeacherOnline ? 'bg-emerald-500' : 'bg-gray-300'}`}></span>
+                </span>
+                <span className="text-xs md:text-sm font-semibold">
+                  {isTeacherOnline ? '🎯 หาคุณครู (กำลังสอน)' : '🎯 หาตำแหน่งครู'}
+                </span>
+              </button>
+
               {user?.username === studentId && (
                 <button
                   onClick={handleClear}
@@ -3347,7 +3513,26 @@ const Board = () => {
       
       <TeacherShortcutBar currentBoardId={studentId} />
       
-      {!isReadonly && (
+      
+      {/* Floating indicator when teacher is drawing off-screen */}
+      {user?.role !== 'admin' && teacherCursor && isTeacherOffScreen && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 animate-bounce">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              trackTeacher(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600/95 hover:bg-indigo-700 text-white font-medium text-xs md:text-sm rounded-full shadow-2xl backdrop-blur border-2 border-indigo-300 cursor-pointer active:scale-95 transition-transform"
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
+            </span>
+            <span>คุณครูกำลังสอนอยู่นอกจอ แตะเพื่อตามไปดู 🎯</span>
+          </button>
+        </div>
+      )}
+{!isReadonly && (
         <Toolbar 
           currentTool={currentTool} setCurrentTool={setCurrentTool}
           penMode={penMode} setPenMode={setPenMode}
@@ -3412,7 +3597,29 @@ const Board = () => {
           }}
         />
 
-        {/* Render Live Cursors */}
+        
+        {/* Radar ping effect when tracking teacher */}
+        {teacherTrackPing && (
+          <div
+            key={teacherTrackPing.key}
+            className="absolute pointer-events-none z-30 transition-all duration-300"
+            style={{
+              left: `${teacherTrackPing.x * zoom + pan.x}px`,
+              top: `${teacherTrackPing.y * zoom + pan.y}px`,
+              transform: 'translate(-50%, -50%)'
+            }}
+          >
+            <div className="relative flex items-center justify-center">
+              <span className="absolute w-32 h-32 rounded-full bg-indigo-500/20 animate-ping" />
+              <span className="absolute w-20 h-20 rounded-full bg-indigo-500/30 animate-pulse" />
+              <div className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-full shadow-2xl border-2 border-white flex items-center gap-1.5 whitespace-nowrap">
+                <span>🎯</span>
+                <span>ตำแหน่งคุณครู</span>
+              </div>
+            </div>
+          </div>
+        )}
+{/* Render Live Cursors */}
         {Object.entries(cursors).map(([socketId, cursor]) => {
           const left = cursor.x * zoom + pan.x;
           const top = cursor.y * zoom + pan.y;

@@ -79,7 +79,7 @@ const TeacherShortcutBar = ({ currentBoardId }) => {
             return (
                 <button
                     key={sid}
-                    onClick={() => navigate(`/board/${sid}`)}
+                    onClick={() => navigate(`/board/${sid}?group=${encodeURIComponent(currentGroup)}`, { state: { returnToGroup: currentGroup } })}
                     className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex items-center gap-2 ${
                         isCurrent 
                         ? 'bg-blue-600 text-white shadow-md scale-105' 

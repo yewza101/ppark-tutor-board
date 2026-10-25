@@ -470,7 +470,7 @@ const AdminDashboard = () => {
                                 </td>
                                 <td className="py-3 px-4 flex justify-end gap-2">
                                   <button
-                                    onClick={() => navigate(`/board/${student.id}`)}
+                                    onClick={() => navigate(`/board/${student.id}?group=${encodeURIComponent(student.group_name || 'General')}`, { state: { returnToGroup: student.group_name || 'General' } })}
                                     title="Open Board"
                                     className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
                                   >

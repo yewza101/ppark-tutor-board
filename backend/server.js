@@ -20,6 +20,7 @@ const boardConnectionCount = {}; // Track total sockets (for memory eviction)
 const studentConnectionCount = {}; // Track only student sockets (for online status)
 const socketRoles = {}; // Track role of each socket (admin/student)
 const activeScreenShares = {}; // Track which boards have active screen sharing
+const voiceRooms = {}; // Track active voice participants: { [boardId]: { [socketId]: { username, isMuted } } }
 
 // Use a wide cors configuration since this is a local setup
 const io = new Server(server, {
@@ -87,6 +88,12 @@ io.on('connection', (socket) => {
       role = 'student';
     }
     
+    const oldBoardId = socketRooms[socket.id];
+    if (oldBoardId && oldBoardId !== boardId) {
+      socket.leave(`board_${oldBoardId}`);
+      boardConnectionCount[oldBoardId] = Math.max(0, (boardConnectionCount[oldBoardId] || 1) - 1);
+    }
+
     socket.join(`board_${boardId}`);
     socketRooms[socket.id] = boardId;
     socketRoles[socket.id] = role;
@@ -272,11 +279,42 @@ io.on('connection', (socket) => {
 
   // --- WebRTC Voice Chat Signaling ---
   socket.on('join-voice', (data) => {
-    socket.to(`board_${data.boardId}`).emit('user-joined-voice', { socketId: socket.id, username: data.username });
+    const boardId = String(data.boardId);
+    if (!voiceRooms[boardId]) {
+      voiceRooms[boardId] = {};
+    }
+
+    // Send existing participants in this room to the newly joined user
+    const existingUsers = Object.entries(voiceRooms[boardId])
+      .filter(([sid]) => sid !== socket.id)
+      .map(([socketId, u]) => ({ socketId, username: u.username, isMuted: u.isMuted || false }));
+
+    socket.emit('existing-voice-users', existingUsers);
+
+    // Save this user to room
+    voiceRooms[boardId][socket.id] = { username: data.username, isMuted: false };
+
+    // Broadcast to others in this room
+    socket.to(`board_${boardId}`).emit('user-joined-voice', { socketId: socket.id, username: data.username });
   });
 
   socket.on('leave-voice', (data) => {
-    socket.to(`board_${data.boardId}`).emit('user-left-voice', { socketId: socket.id });
+    const boardId = String(data.boardId);
+    if (voiceRooms[boardId] && voiceRooms[boardId][socket.id]) {
+      delete voiceRooms[boardId][socket.id];
+      if (Object.keys(voiceRooms[boardId]).length === 0) {
+        delete voiceRooms[boardId];
+      }
+    }
+    socket.to(`board_${boardId}`).emit('user-left-voice', { socketId: socket.id });
+  });
+
+  socket.on('mic-status-changed', (data) => {
+    const boardId = String(data.boardId);
+    if (voiceRooms[boardId] && voiceRooms[boardId][socket.id]) {
+      voiceRooms[boardId][socket.id].isMuted = data.isMuted;
+    }
+    socket.to(`board_${boardId}`).emit('mic-status-changed', { socketId: socket.id, isMuted: data.isMuted });
   });
 
   socket.on('webrtc-offer', (data) => {
@@ -299,10 +337,6 @@ io.on('connection', (socket) => {
       candidate: data.candidate,
       callerSocketId: socket.id
     });
-  });
-
-  socket.on('mic-status-changed', (data) => {
-    socket.to(`board_${data.boardId}`).emit('mic-status-changed', { socketId: socket.id, isMuted: data.isMuted });
   });
 
   socket.on('admin-mute-user', (data) => {
@@ -352,6 +386,17 @@ io.on('connection', (socket) => {
     const boardId = socketRooms[socket.id];
     const role = socketRoles[socket.id];
     
+    // Clean up from voiceRooms if present
+    for (const [vid, room] of Object.entries(voiceRooms)) {
+      if (room[socket.id]) {
+        delete room[socket.id];
+        socket.to(`board_${vid}`).emit('user-left-voice', { socketId: socket.id });
+        if (Object.keys(room).length === 0) {
+          delete voiceRooms[vid];
+        }
+      }
+    }
+
     if (boardId) {
       socket.to(`board_${boardId}`).emit('cursor-leave', socket.id);
       socket.to(`board_${boardId}`).emit('user-left-voice', { socketId: socket.id });

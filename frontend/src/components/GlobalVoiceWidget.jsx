@@ -1,8 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { Mic, MicOff, PhoneOff, Users, GripVertical } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import { API_URL } from '../config';
 import { useLocation } from 'react-router-dom';
+
+const safeSetPointerCapture = (target, pointerId) => {
+  try {
+    if (target && target.setPointerCapture) {
+      target.setPointerCapture(pointerId);
+    }
+  } catch (err) {}
+};
 
 const GlobalVoiceWidget = () => {
   const user = useAuthStore(state => state.user);
@@ -12,8 +21,16 @@ const GlobalVoiceWidget = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [peers, setPeers] = useState({}); // { socketId: { username, stream, isMuted } }
   const [showParticipants, setShowParticipants] = useState(false);
-  const [widgetPos, setWidgetPos] = useState({ x: typeof window !== 'undefined' ? window.innerWidth - 70 : 300, y: 80 });
+  const [volumeLevel, setVolumeLevel] = useState(0); // 0 to 100
+  const [widgetPos, setWidgetPos] = useState({ 
+    x: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 260) : 300, 
+    y: 80 
+  });
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animFrameRef = useRef(null);
 
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
@@ -36,8 +53,8 @@ const GlobalVoiceWidget = () => {
   useEffect(() => {
     const handleResize = () => {
       setWidgetPos(prev => ({
-        x: Math.min(prev.x, window.innerWidth - 70),
-        y: Math.min(prev.y, window.innerHeight - 200)
+        x: Math.min(prev.x, window.innerWidth - 260),
+        y: Math.min(prev.y, window.innerHeight - 100)
       }));
     };
     window.addEventListener('resize', handleResize);
@@ -84,6 +101,7 @@ const GlobalVoiceWidget = () => {
         track.enabled = !isMuted;
       });
     }
+    if (isMuted) setVolumeLevel(0);
     socket.emit('mic-status-changed', { boardId: voiceRoomId, isMuted });
   }, [isMuted, socket, isVoiceEnabled, voiceRoomId]);
 
@@ -99,6 +117,7 @@ const GlobalVoiceWidget = () => {
         localStreamRef.current = stream;
         stream.getAudioTracks().forEach(track => track.enabled = !isMuted);
         socket.emit('join-voice', { boardId: voiceRoomId, username: user?.username || 'Unknown' });
+        setupAudioMeter(stream);
       } catch (err) {
         console.error("Microphone access denied:", err);
         alert("Cannot access microphone. Please check permissions.");
@@ -269,7 +288,68 @@ const GlobalVoiceWidget = () => {
     });
   };
 
+  const setupAudioMeter = (stream) => {
+    try {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(() => {});
+      }
+
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      const audioCtx = new AudioContextClass();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      audioContextRef.current = audioCtx;
+
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.4;
+      analyserRef.current = analyser;
+
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const updateVolume = () => {
+        if (!analyserRef.current) return;
+        analyser.getByteFrequencyData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        const normalized = Math.min(100, Math.round((avg / 90) * 100));
+        setVolumeLevel(normalized);
+
+        animFrameRef.current = requestAnimationFrame(updateVolume);
+      };
+
+      updateVolume();
+    } catch (err) {
+      console.warn('Audio metering error:', err);
+    }
+  };
+
   const cleanup = () => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        if (audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close().catch(() => {});
+        }
+      } catch (e) {}
+      audioContextRef.current = null;
+    }
+    setVolumeLevel(0);
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
@@ -305,9 +385,9 @@ const GlobalVoiceWidget = () => {
       </div>
 
       {showParticipants && user?.role === 'admin' && (
-        <div className="fixed top-20 right-20 w-72 bg-white rounded-xl shadow-2xl overflow-hidden z-[9999] border border-gray-100">
+        <div className="fixed top-20 right-20 w-72 bg-white rounded-2xl shadow-2xl overflow-hidden z-[9999] border border-gray-100">
           <div className="bg-indigo-600 text-white p-4 font-bold flex justify-between items-center">
-            <span>Participants ({Object.keys(peers).length + (isVoiceEnabled ? 1 : 0)})</span>
+            <span>ผู้เข้าร่วมสนทนา ({Object.keys(peers).length + (isVoiceEnabled ? 1 : 0)})</span>
             <button onClick={() => setShowParticipants(false)} className="hover:text-indigo-200">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -317,9 +397,9 @@ const GlobalVoiceWidget = () => {
           <div className="max-h-64 overflow-y-auto p-2">
             {isVoiceEnabled && (
               <div className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
-                <span className="font-medium text-gray-800">{user?.username} (You)</span>
-                <span className={isMuted ? 'text-red-500 text-xs font-bold' : 'text-green-500 text-xs font-bold'}>
-                  {isMuted ? 'MUTED' : 'LIVE'}
+                <span className="font-medium text-gray-800">{user?.username} (คุณ)</span>
+                <span className={isMuted ? 'text-rose-600 text-xs font-bold' : 'text-emerald-600 text-xs font-bold'}>
+                  {isMuted ? '🔴 ปิดไมค์' : '🟢 เปิดไมค์'}
                 </span>
               </div>
             )}
@@ -327,21 +407,19 @@ const GlobalVoiceWidget = () => {
               <div key={socketId} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
                 <span className="font-medium text-gray-800">{peer.username}</span>
                 <div className="flex items-center gap-2">
-                  <span className={peer.isMuted ? 'text-red-500 text-xs font-bold' : 'text-green-500 text-xs font-bold'}>
-                    {peer.isMuted ? 'MUTED' : 'LIVE'}
+                  <span className={peer.isMuted ? 'text-rose-600 text-xs font-bold' : 'text-emerald-600 text-xs font-bold'}>
+                    {peer.isMuted ? '🔴 ปิดไมค์' : '🟢 เปิดไมค์'}
                   </span>
                   {!peer.isMuted && (
-                    <button onClick={() => muteStudent(socketId)} className="p-1 text-red-500 hover:bg-red-100 rounded" title="Mute Student">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
+                    <button onClick={() => muteStudent(socketId)} className="p-1.5 text-rose-500 hover:bg-rose-100 rounded-lg transition-colors" title="สั่งปิดไมค์นักเรียน">
+                      <MicOff size={15} />
                     </button>
                   )}
                 </div>
               </div>
             ))}
             {Object.keys(peers).length === 0 && !isVoiceEnabled && (
-              <div className="text-center text-gray-500 p-4">No one is in Voice Chat</div>
+              <div className="text-center text-gray-500 p-4 text-sm">ยังไม่มีใครอยู่ในห้องเสียง</div>
             )}
           </div>
         </div>
@@ -349,84 +427,141 @@ const GlobalVoiceWidget = () => {
 
       {/* Voice Controls Widget */}
       <div 
-        className="fixed z-[9998] flex flex-col items-center gap-3 bg-white/90 backdrop-blur p-2 rounded-2xl shadow-xl border border-gray-200 cursor-move"
+        className="fixed z-[9998] flex items-center bg-white/95 backdrop-blur-md px-3 py-2 rounded-2xl shadow-xl border border-gray-200 select-none cursor-move transition-all"
         style={{ left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, touchAction: 'none' }}
         onPointerDown={(e) => {
             dragRef.current = { isDragging: true, startX: e.clientX, startY: e.clientY, origX: widgetPos.x, origY: widgetPos.y };
-            e.target.setPointerCapture(e.pointerId);
+            safeSetPointerCapture(e.target, e.pointerId);
         }}
         onPointerMove={(e) => {
             if (dragRef.current.isDragging) {
                 setWidgetPos({
-                    x: dragRef.current.origX + (e.clientX - dragRef.current.startX),
-                    y: dragRef.current.origY + (e.clientY - dragRef.current.startY)
+                    x: Math.max(10, Math.min(window.innerWidth - 270, dragRef.current.origX + (e.clientX - dragRef.current.startX))),
+                    y: Math.max(10, Math.min(window.innerHeight - 80, dragRef.current.origY + (e.clientY - dragRef.current.startY)))
                 });
             }
         }}
         onPointerUp={(e) => {
             dragRef.current.isDragging = false;
-            e.target.releasePointerCapture(e.pointerId);
+            try { if (e.target.hasPointerCapture && e.target.hasPointerCapture(e.pointerId)) e.target.releasePointerCapture(e.pointerId); } catch(err) {}
         }}
       >
+        {/* Drag Handle */}
+        <div className="pl-1 pr-1.5 py-2 text-gray-300 hover:text-gray-500 cursor-grab flex items-center" title="ลากเพื่อย้ายตำแหน่ง">
+          <GripVertical size={16} />
+        </div>
+
         {user?.role === 'admin' && (
-          <>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 px-1">Global Voice</div>
+          <div className="flex items-center">
             <button
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => setShowParticipants(!showParticipants)}
-              className={`relative flex items-center justify-center w-10 h-10 rounded-full transition-all ${showParticipants ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              title="Voice Participants"
+              className={`relative p-2 rounded-xl transition-all ${showParticipants ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500 hover:bg-gray-100'}`}
+              title="ดูรายชื่อในห้องเสียง"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-              </svg>
-              <span className="absolute -top-1 -right-1 bg-indigo-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+              <Users size={18} />
+              <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                 {Object.keys(peers).length + (isVoiceEnabled ? 1 : 0)}
               </span>
             </button>
-            <div className="w-8 h-px bg-gray-200 my-1" />
-          </>
+            <div className="w-px h-6 bg-gray-200 mx-2" />
+          </div>
         )}
 
         {!isVoiceEnabled ? (
           <button
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={() => setIsVoiceEnabled(true)}
-            className="flex items-center justify-center px-4 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-all"
-            title="Join Global Voice"
+            className="flex items-center gap-2.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 active:scale-95 text-white rounded-xl font-bold shadow-md hover:shadow-lg transition-all text-sm"
+            title="แตะเพื่อเปิดไมค์พูดคุย"
           >
-            Join Voice
+            <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
+              <Mic size={16} className="text-white" />
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="leading-tight text-xs font-bold">เปิดไมค์คุย (Join Voice)</span>
+              <span className="text-[10px] font-normal text-indigo-100">แตะเพื่อเริ่มคุย</span>
+            </div>
           </button>
         ) : (
-          <>
+          <div className="flex items-center gap-2.5">
+            {/* Mic Toggle Button with dynamic reactive green glow */}
             <button
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => setIsMuted(!isMuted)}
-              className={`flex items-center justify-center w-10 h-10 rounded-full shadow-md transition-all ${
-                isMuted ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-200'
+              className={`relative flex items-center justify-center w-11 h-11 rounded-full font-bold shadow-md active:scale-90 transition-all ${
+                isMuted
+                  ? 'bg-rose-500 hover:bg-rose-600 text-white ring-4 ring-rose-100'
+                  : 'bg-emerald-500 hover:bg-emerald-600 text-white ring-4 ring-emerald-100'
               }`}
-              title={isMuted ? "Unmute" : "Mute"}
+              style={{
+                boxShadow: !isMuted && volumeLevel > 5 
+                  ? `0 0 0 ${4 + (volumeLevel / 100) * 12}px rgba(34, 197, 94, ${0.3 + (volumeLevel / 100) * 0.4}), 0 0 ${(volumeLevel / 100) * 22}px rgba(34, 197, 94, 0.7)` 
+                  : undefined,
+                transform: !isMuted && volumeLevel > 5 
+                  ? `scale(${1 + Math.min(0.12, (volumeLevel / 100) * 0.12)})` 
+                  : undefined,
+                transition: 'box-shadow 0.08s ease-out, transform 0.08s ease-out, background-color 0.2s'
+              }}
+              title={isMuted ? "แตะเพื่อเปิดไมค์" : "แตะเพื่อปิดไมค์"}
             >
               {isMuted ? (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clipRule="evenodd" />
-                </svg>
+                <MicOff size={22} className="text-white" />
               ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                </svg>
+                <Mic size={22} className="text-white" />
               )}
             </button>
+
+            {/* Status Text & Audio Wave */}
+            <div 
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setIsMuted(!isMuted)}
+              className="flex flex-col justify-center cursor-pointer min-w-[110px]"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className={`text-xs font-bold ${isMuted ? 'text-rose-600' : 'text-emerald-700'}`}>
+                  {isMuted ? '🔴 ปิดไมค์อยู่' : '🟢 เปิดไมค์อยู่'}
+                </span>
+
+                {/* Real-time Green Volume Wave Bars */}
+                {!isMuted && (
+                  <div className="flex items-end gap-0.5 h-3 ml-0.5">
+                    <span 
+                      className="w-1 bg-emerald-500 rounded-full transition-all duration-75"
+                      style={{ height: `${Math.max(4, Math.min(12, 4 + (volumeLevel / 100) * 8))}px` }}
+                    />
+                    <span 
+                      className="w-1 bg-emerald-500 rounded-full transition-all duration-75"
+                      style={{ height: `${Math.max(4, Math.min(14, 4 + (volumeLevel / 100) * 10))}px` }}
+                    />
+                    <span 
+                      className="w-1 bg-emerald-500 rounded-full transition-all duration-75"
+                      style={{ height: `${Math.max(4, Math.min(10, 4 + (volumeLevel / 100) * 6))}px` }}
+                    />
+                  </div>
+                )}
+              </div>
+              
+              <span className={`text-[10px] ${isMuted ? 'text-rose-500 font-medium' : (volumeLevel > 8 ? 'text-emerald-600 font-bold animate-pulse' : 'text-gray-400')}`}>
+                {isMuted ? 'แตะเพื่อเปิดไมค์' : (volumeLevel > 8 ? 'กำลังพูด (เสียงเข้า)' : 'แตะเพื่อปิดไมค์')}
+              </span>
+            </div>
+
+            <div className="w-px h-6 bg-gray-200 mx-0.5" />
+
+            {/* Leave Voice Button */}
             <button
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => {
                 setIsVoiceEnabled(false);
                 setIsMuted(false);
               }}
-              className="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-md transition-all"
-              title="Leave Voice"
+              className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+              title="ออกจากห้องคุยเสียง (วางสาย)"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" />
-              </svg>
+              <PhoneOff size={18} />
             </button>
-          </>
+          </div>
         )}
       </div>
     </>

@@ -51,7 +51,7 @@ const Login = () => {
     
     try {
       const response = await axios.post(`${API_URL}/api/auth/login-teacher`, {
-        teacher_code: teacherCode
+        teacher_code: teacherCode.trim()
       });
       
       login(response.data.user, response.data.token);

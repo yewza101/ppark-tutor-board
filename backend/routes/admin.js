@@ -124,8 +124,13 @@ router.delete('/students/:id', async (req, res) => {
   res.json({ message: 'Student deleted successfully' });
 });
 
-// Register a new teacher (admin only)
+// Register a new teacher (Master admin only)
 router.post('/register-teacher', async (req, res) => {
+  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
+  if (!isMaster) {
+    return res.status(403).json({ message: 'Only Master Admin (adminpark) can register new teachers' });
+  }
+
   const { teacher_code, username } = req.body;
   
   if (!teacher_code || !username) {
@@ -154,8 +159,13 @@ router.post('/register-teacher', async (req, res) => {
   res.status(201).json({ message: 'Teacher registered successfully', user: data[0] });
 });
 
-// Get all teachers (for admin management)
+// Get all teachers (for master admin management)
 router.get('/teachers', async (req, res) => {
+  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
+  if (!isMaster) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+
   const { data: teachers, error } = await supabase
     .from('users')
     .select('id, username, teacher_code, created_at')
@@ -169,8 +179,13 @@ router.get('/teachers', async (req, res) => {
   res.json(teachers || []);
 });
 
-// Delete a teacher
+// Delete a teacher (Master admin only)
 router.delete('/teachers/:id', async (req, res) => {
+  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
+  if (!isMaster) {
+    return res.status(403).json({ message: 'Only Master Admin (adminpark) can delete teachers' });
+  }
+
   const teacherId = req.params.id;
   
   // Guard: Never delete adminpark

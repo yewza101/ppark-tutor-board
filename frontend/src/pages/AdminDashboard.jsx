@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Trash2, UserPlus, KeyRound, ExternalLink, LogOut, ShieldAlert, Users, Database, AlertTriangle } from 'lucide-react';
+import { Trash2, UserPlus, KeyRound, ExternalLink, LogOut, ShieldAlert, Users, Database, AlertTriangle, GraduationCap } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import { API_URL } from '../config';
 
@@ -191,17 +191,26 @@ const AdminDashboard = () => {
       <header className="bg-white shadow-sm sticky top-0 z-10 w-full">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
-            {isMasterAdmin && (
+            <h1 className="text-2xl font-bold text-gray-800">
+              {isMasterAdmin ? 'Master Admin Dashboard' : 'Teacher Dashboard'}
+            </h1>
+            {isMasterAdmin ? (
               <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold border border-amber-300 flex items-center gap-1.5 shadow-sm">
                 <ShieldAlert size={14} /> Master Admin (adminpark)
               </span>
+            ) : (
+              <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold border border-indigo-200 flex items-center gap-1.5 shadow-sm">
+                <GraduationCap size={15} /> คุณครู: {user?.username} {user?.teacher_code ? `(รหัส: ${user.teacher_code})` : ''}
+              </span>
             )}
             <button
-              onClick={() => navigate('/board/teacher_board')}
+              onClick={() => {
+                const target = isMasterAdmin ? '/board/teacher_board' : `/board/teacher_board_${encodeURIComponent(user?.username || 'teacher')}`;
+                navigate(target);
+              }}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-sm font-medium"
             >
-              เข้าบอร์ดของครู (Teacher Board)
+              {isMasterAdmin ? 'เข้าบอร์ดกลาง (Master Board)' : `เข้ากระดานสอนของคุณครู (${user?.username || 'Teacher'})`}
             </button>
           </div>
           <button 
@@ -224,9 +233,14 @@ const AdminDashboard = () => {
             
             {/* Add Student Form */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                <UserPlus className="text-blue-600" /> Add New Student
+              <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
+                <UserPlus className="text-blue-600" /> {isMasterAdmin ? 'Add New Student' : `เพิ่มนักเรียนใหม่ (คุณครู ${user?.username})`}
               </h2>
+              {!isMasterAdmin && (
+                <p className="text-xs text-gray-500 mb-4">
+                  นักเรียนที่เพิ่มจะอยู่ในห้องเรียนของคุณครู {user?.username} โดยตรง
+                </p>
+              )}
               
               <form onSubmit={handleAddStudent} className="space-y-4">
                 <div>
@@ -270,43 +284,45 @@ const AdminDashboard = () => {
               </form>
             </div>
 
-            {/* Add Teacher Form */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                <UserPlus className="text-indigo-600" /> Add New Teacher
-              </h2>
-              
-              <form onSubmit={handleRegisterTeacher} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Teacher Name</label>
-                  <input
-                    type="text"
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
-                    value={newTeacherName}
-                    onChange={(e) => setNewTeacherName(e.target.value)}
-                    placeholder="e.g. Teacher Bob"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Teacher Code</label>
-                  <input
-                    type="text"
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
-                    value={newTeacherCode}
-                    onChange={(e) => setNewTeacherCode(e.target.value)}
-                    placeholder="e.g. BOB-1234"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full px-4 py-2.5 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 active:bg-indigo-800 transition-colors font-medium shadow-sm"
-                >
-                  Create Teacher
-                </button>
-              </form>
-            </div>
+            {/* Add Teacher Form (Master Admin Only) */}
+            {isMasterAdmin && (
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                  <UserPlus className="text-indigo-600" /> Add New Teacher
+                </h2>
+                
+                <form onSubmit={handleRegisterTeacher} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Teacher Name</label>
+                    <input
+                      type="text"
+                      required
+                      className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                      value={newTeacherName}
+                      onChange={(e) => setNewTeacherName(e.target.value)}
+                      placeholder="e.g. Teacher Bob"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Teacher Code</label>
+                    <input
+                      type="text"
+                      required
+                      className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                      value={newTeacherCode}
+                      onChange={(e) => setNewTeacherCode(e.target.value)}
+                      placeholder="e.g. BOB-1234"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full px-4 py-2.5 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 active:bg-indigo-800 transition-colors font-medium shadow-sm"
+                  >
+                    Create Teacher
+                  </button>
+                </form>
+              </div>
+            )}
 
             {/* Master Admin: Storage Cleanup */}
             {isMasterAdmin && (
@@ -386,11 +402,15 @@ const AdminDashboard = () => {
 
             {/* Student Groups */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <h2 className="text-xl font-bold mb-6">Student Groups</h2>
+              <h2 className="text-xl font-bold mb-6">
+                {isMasterAdmin ? `Student Groups (All Teachers - ${students.length} คน)` : `ห้องเรียนและนักเรียนของคุณครู ${user?.username} (${students.length} คน)`}
+              </h2>
               
               <div className="space-y-8">
                 {students.length === 0 ? (
-                  <div className="py-8 text-center text-gray-500">No students found</div>
+                  <div className="py-8 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                    {isMasterAdmin ? 'No students found in system' : `คุณครู ${user?.username} ยังไม่มีนักเรียนในระบบ สามารถเพิ่มนักเรียนใหม่ได้จากแบบฟอร์มด้านซ้าย`}
+                  </div>
                 ) : (
                   Object.entries(
                     students.reduce((acc, student) => {

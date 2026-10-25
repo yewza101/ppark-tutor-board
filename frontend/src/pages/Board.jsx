@@ -375,6 +375,14 @@ const isElementInLasso = (el, lassoPoints) => {
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
 
+const safeSetPointerCapture = (target, pointerId) => {
+  try {
+    if (target && target.setPointerCapture) {
+      target.setPointerCapture(pointerId);
+    }
+  } catch (err) {}
+};
+
 const Board = () => {
   const { studentId } = useParams();
   const navigate = useNavigate();
@@ -450,13 +458,62 @@ const Board = () => {
     return { x: resX, y: resY };
   }, [zoom, viewportSize]);
 
-  // Keep track of window size
+  // Keep track of window size and prevent unwanted iOS/iPad text selection on canvas
   useEffect(() => {
     const handleResize = () => {
       setViewportSize({ w: window.innerWidth, h: window.innerHeight });
     };
+    const preventSelection = (e) => {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+        return;
+      }
+      e.preventDefault();
+    };
+
+    const clearSelection = () => {
+      const activeEl = document.activeElement;
+      if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA')) {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          sel.removeAllRanges();
+        }
+      }
+    };
+
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    document.addEventListener('selectstart', preventSelection);
+    document.addEventListener('selectionchange', clearSelection);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      document.removeEventListener('selectstart', preventSelection);
+      document.removeEventListener('selectionchange', clearSelection);
+    };
+  }, []);
+
+  // Intercept native touchstart on canvas to block iOS rapid multi-tap zoom and select-all heuristics
+  useEffect(() => {
+    const draftCanvas = draftCanvasRef.current;
+    if (!draftCanvas) return;
+
+    let lastTapTime = 0;
+    const handleTouchStart = (e) => {
+      const now = Date.now();
+      const tapInterval = now - lastTapTime;
+      lastTapTime = now;
+
+      // Prevent multi-tap zoom and multi-tap select-all on iOS
+      if (tapInterval < 350 && e.cancelable) {
+        e.preventDefault();
+      }
+
+      // If single touch/pen, stop default iOS callout and text selection
+      if (e.touches && e.touches.length <= 1 && e.cancelable) {
+        e.preventDefault();
+      }
+    };
+
+    draftCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+    return () => draftCanvas.removeEventListener('touchstart', handleTouchStart);
   }, []);
 
   // Broadcast viewport changes with throttle/debounce to prevent network flooding
@@ -1459,14 +1516,21 @@ const Board = () => {
         return;
     }
     
-    if (activePointerId.current !== null) return; // Ignore multitouch secondary fingers
-    activePointerId.current = e.pointerId;
+    // Apple Pencil / Pen always takes priority over any previous finger or stale pointer
+    if (e.pointerType === 'pen') {
+      activePointerId.current = e.pointerId;
+    } else {
+      if (activePointerId.current !== null && activePointerId.current !== e.pointerId) {
+        return; // Ignore multitouch secondary fingers
+      }
+      activePointerId.current = e.pointerId;
+    }
 
     // Middle click or Space + Click for panning, or Pen Mode with touch
     if (e.button === 1 || e.altKey || currentTool === 'pan' || (penMode && e.pointerType === 'touch')) {
       setIsPanning(true);
       startPoint.current = { x: e.clientX, y: e.clientY };
-      e.target.setPointerCapture(e.pointerId);
+      safeSetPointerCapture(e.target, e.pointerId);
       return;
     }
 
@@ -1511,7 +1575,7 @@ const Board = () => {
                     };
                     startPoint.current = { x: e.clientX, y: e.clientY };
                     isDrawing.current = true;
-                    e.target.setPointerCapture(e.pointerId);
+                    safeSetPointerCapture(e.target, e.pointerId);
                     return;
                 }
             }
@@ -1534,7 +1598,7 @@ const Board = () => {
                     };
                     startPoint.current = { x: e.clientX, y: e.clientY };
                     isDrawing.current = true;
-                    e.target.setPointerCapture(e.pointerId);
+                    safeSetPointerCapture(e.target, e.pointerId);
                     return;
                 }
                 
@@ -1552,7 +1616,7 @@ const Board = () => {
                     };
                     startPoint.current = { x: e.clientX, y: e.clientY };
                     isDrawing.current = true;
-                    e.target.setPointerCapture(e.pointerId);
+                    safeSetPointerCapture(e.target, e.pointerId);
                     return;
                 }
                 
@@ -1567,7 +1631,7 @@ const Board = () => {
                         };
                         startPoint.current = { x: e.clientX, y: e.clientY };
                         isDrawing.current = true;
-                        e.target.setPointerCapture(e.pointerId);
+                        safeSetPointerCapture(e.target, e.pointerId);
                         return;
                     }
                 }
@@ -1593,7 +1657,7 @@ const Board = () => {
             };
             startPoint.current = { x: e.clientX, y: e.clientY };
             isDrawing.current = true;
-            e.target.setPointerCapture(e.pointerId);
+            safeSetPointerCapture(e.target, e.pointerId);
             return;
         }
 
@@ -1613,7 +1677,7 @@ const Board = () => {
           };
           startPoint.current = { x: e.clientX, y: e.clientY };
           isDrawing.current = true;
-          e.target.setPointerCapture(e.pointerId);
+          safeSetPointerCapture(e.target, e.pointerId);
           return;
         }
         // Check if any selected elements are locked - if ALL are locked, don't allow move
@@ -1638,7 +1702,7 @@ const Board = () => {
           };
           startPoint.current = { x: e.clientX, y: e.clientY };
           isDrawing.current = true;
-          e.target.setPointerCapture(e.pointerId);
+          safeSetPointerCapture(e.target, e.pointerId);
           return;
         }
       }
@@ -1650,7 +1714,7 @@ const Board = () => {
       activeLassoPathRef.current = null;
       currentPath.current = { id: generateId(), type: 'lasso', tool: 'select', points: [pos] };
       isDrawing.current = true;
-      e.target.setPointerCapture(e.pointerId);
+      safeSetPointerCapture(e.target, e.pointerId);
       return;
     }
 
@@ -1659,7 +1723,7 @@ const Board = () => {
       checkObjectEraserCollision(pos, false);
       lastEraserPos.current = pos;
       isDrawing.current = true;
-      e.target.setPointerCapture(e.pointerId);
+      safeSetPointerCapture(e.target, e.pointerId);
       return;
     }
     if (currentTool === 'eraser') {
@@ -1670,14 +1734,14 @@ const Board = () => {
       checkObjectEraserCollision(pos, true);
       lastEraserPos.current = pos;
       isDrawing.current = true;
-      e.target.setPointerCapture(e.pointerId);
+      safeSetPointerCapture(e.target, e.pointerId);
       return;
     }
 
     isDrawing.current = true;
     const pos = getMousePos(e);
     startPoint.current = pos;
-    e.target.setPointerCapture(e.pointerId);
+    safeSetPointerCapture(e.target, e.pointerId);
 
     if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser' || currentTool === 'highlighter') {
       currentPath.current = {
@@ -2207,11 +2271,15 @@ const Board = () => {
         lastPinchCenter.current = null;
     }
     
-    if (activePointerId.current !== e.pointerId) return;
+    if (activePointerId.current !== e.pointerId && e.pointerType !== 'pen') return;
     activePointerId.current = null;
     lastEraserPos.current = null;
     
-    e.target.releasePointerCapture(e.pointerId);
+    try {
+      if (e.target.hasPointerCapture && e.target.hasPointerCapture(e.pointerId)) {
+        e.target.releasePointerCapture(e.pointerId);
+      }
+    } catch (err) {}
     if (isPanning) {
       setIsPanning(false);
       return;
@@ -3275,7 +3343,10 @@ const Board = () => {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
+          onPointerCancel={(e) => {
+            activePointerId.current = null;
+            onPointerUp(e);
+          }}
           onWheel={onWheel}
           onContextMenu={(e) => {
              e.preventDefault();

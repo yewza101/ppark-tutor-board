@@ -19,6 +19,7 @@ router.post('/login', async (req, res) => {
       username: 'adminpark',
       role: 'admin',
       isMasterAdmin: true,
+      teacher_code: 'adminpark',
       group_name: 'Master'
     };
     const token = jwt.sign(masterUser, JWT_SECRET, { expiresIn: '24h' });
@@ -54,6 +55,7 @@ router.post('/login', async (req, res) => {
       id: user.id,
       username: user.username,
       role: user.role,
+      teacher_code: user.teacher_code,
       group_name: user.group_name
     }
   });
@@ -72,6 +74,7 @@ router.post('/login-teacher', async (req, res) => {
       username: 'adminpark',
       role: 'admin',
       isMasterAdmin: true,
+      teacher_code: 'adminpark',
       group_name: 'Master'
     };
     const token = jwt.sign(masterUser, JWT_SECRET, { expiresIn: '24h' });
@@ -114,6 +117,7 @@ router.post('/login-teacher', async (req, res) => {
       id: user.id,
       username: user.username,
       role: user.role,
+      teacher_code: user.teacher_code,
       group_name: user.group_name
     }
   });

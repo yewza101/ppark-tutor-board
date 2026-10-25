@@ -92,7 +92,7 @@ const MiniBoard = ({ student, token }) => {
     });
 
     socket.on('undo', () => {
-      setElements(prev => prev.slice(0, -1));
+      // Deprecated global undo: no-op since boards emit targeted 'delete-element'
     });
 
     socket.on('clear-canvas', () => {

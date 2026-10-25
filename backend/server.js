@@ -128,14 +128,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('undo', async (boardId) => {
-    socket.to(`board_${boardId}`).emit('undo');
-    try {
-      const elements = await getBoardState(boardId);
-      elements.pop();
-      saveBoardState(boardId);
-    } catch (err) {
-      console.error('Error in undo cache:', err);
-    }
+    // Deprecated global undo: no-op to prevent wiping other users' work.
+    // Client boards now use targeted 'delete-element' for per-user undo.
   });
 
   socket.on('clear-canvas', async (boardId) => {

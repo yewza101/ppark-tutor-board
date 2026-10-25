@@ -10,9 +10,6 @@ import { API_URL } from '../config';
 import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 import { jsPDF } from 'jspdf';
-import katex from 'katex';
-import 'katex/dist/katex.min.css';
-import html2canvas from 'html2canvas';
 import { getStroke } from 'perfect-freehand';
 
 const getSvgPathFromStroke = (stroke) => {
@@ -27,34 +24,6 @@ const getSvgPathFromStroke = (stroke) => {
   );
   d.push('Z');
   return d.join(' ');
-};
-
-const renderMathToImage = async (latex, color, size) => {
-    return new Promise((resolve) => {
-        const div = document.createElement('div');
-        div.style.position = 'absolute';
-        div.style.top = '-9999px';
-        div.style.left = '-9999px';
-        div.style.color = color;
-        div.style.fontSize = `${size}px`;
-        div.style.background = 'transparent';
-        document.body.appendChild(div);
-        
-        try {
-            katex.render(latex, div, { throwOnError: false, displayMode: true });
-            html2canvas(div, { backgroundColor: null, scale: 2 }).then(canvas => {
-                const dataUrl = canvas.toDataURL('image/png');
-                document.body.removeChild(div);
-                resolve({ dataUrl, width: canvas.width / 2, height: canvas.height / 2 });
-            }).catch(() => {
-                document.body.removeChild(div);
-                resolve(null);
-            });
-        } catch(e) {
-            document.body.removeChild(div);
-            resolve(null);
-        }
-    });
 };
 
 const getPt = (p) => (!p ? null : Array.isArray(p) ? { x: p[0], y: p[1] } : { x: p.x, y: p.y });
@@ -414,6 +383,9 @@ const Board = () => {
   const elementsRef = useRef([]); // For zero-latency canvas rendering
   const [pastStates, setPastStates] = useState([]);
   const [futureStates, setFutureStates] = useState([]);
+  const [myRedoStack, setMyRedoStack] = useState([]);
+  const handleUndoRef = useRef(null);
+  const handleRedoRef = useRef(null);
   
   // Viewport state
   const [zoom, setZoom] = useState(1);
@@ -514,6 +486,29 @@ const Board = () => {
 
     draftCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
     return () => draftCanvas.removeEventListener('touchstart', handleTouchStart);
+  }, []);
+
+  // Keyboard shortcuts: Ctrl+Z / Cmd+Z (Undo) and Ctrl+Y / Ctrl+Shift+Z (Redo)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || document.activeElement?.isContentEditable) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          if (handleRedoRef.current) handleRedoRef.current();
+        } else {
+          if (handleUndoRef.current) handleUndoRef.current();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        if (handleRedoRef.current) handleRedoRef.current();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Broadcast viewport changes with throttle/debounce to prevent network flooding
@@ -777,21 +772,6 @@ const Board = () => {
       if (data.socketId && remotePaths.current[data.socketId]) {
         delete remotePaths.current[data.socketId];
       }
-      if (fullRedrawRef.current) fullRedrawRef.current();
-    });
-
-    newSocket.on('undo', () => {
-      setElements(prev => {
-        if (prev.length === 0) return prev;
-        const newElements = prev.slice(0, -1);
-        elementsRef.current = newElements;
-        setPastStates(p => {
-          const newPast = [...p];
-          newPast.pop(); // Remove the last state which corresponds to the element just undone
-          return newPast;
-        });
-        return newElements;
-      });
       if (fullRedrawRef.current) fullRedrawRef.current();
     });
 
@@ -1509,10 +1489,10 @@ const Board = () => {
     
     if (activePointers.current.size > 2) return;
     
-    if (currentTool === 'text' || currentTool === 'math' || currentTool === 'postit') {
+    if (currentTool === 'text') {
         if (textInput) return; // Prevent overwriting active text input before onBlur fires
         const pos = getMousePos(e);
-        setTextInput({ x: pos.x, y: pos.y, text: '', isMath: currentTool === 'math', isPostit: currentTool === 'postit', color: brushColor });
+        setTextInput({ x: pos.x, y: pos.y, text: '', color: brushColor });
         return;
     }
     
@@ -1743,6 +1723,8 @@ const Board = () => {
     startPoint.current = pos;
     safeSetPointerCapture(e.target, e.pointerId);
 
+    const myAuthor = user?.username || String(user?.id) || 'me';
+
     if (currentTool === 'pencil' || currentTool === 'eraser' || currentTool === 'laser' || currentTool === 'highlighter') {
       currentPath.current = {
         id: generateId(),
@@ -1750,7 +1732,8 @@ const Board = () => {
         tool: currentTool,
         points: [pos],
         color: brushColor,
-        size: brushSize
+        size: brushSize,
+        author: myAuthor
       };
     } else {
       // Shape
@@ -1765,7 +1748,8 @@ const Board = () => {
         w: 0,
         h: 0,
         color: brushColor,
-        size: brushSize
+        size: brushSize,
+        author: myAuthor
       };
     }
   };
@@ -2377,14 +2361,13 @@ const Board = () => {
       // Don't save laser strokes to the permanent board elements
       // Don't save laser strokes to the permanent board elements
       if (stroke.tool !== 'laser') {
+        const myAuthor = user?.username || String(user?.id) || 'me';
+        stroke = { ...stroke, author: stroke.author || myAuthor };
         // Optimistic update for zero-flicker rendering
         elementsRef.current = [...elementsRef.current, stroke];
         
-        setElements(prev => {
-          setPastStates(p => [...p, prev]);
-          setFutureStates([]);
-          return [...prev, stroke];
-        });
+        setElements(prev => [...prev, stroke]);
+        setMyRedoStack([]);
         if (socket && socket.id) {
           socket.emit('draw-stroke', { boardId: studentId, stroke, socketId: socket.id });
         }
@@ -2444,7 +2427,7 @@ const Board = () => {
 
   const handleExport = async () => {
       if (elementsRef.current.length === 0) {
-          alert('ไม่มีข้อมูลให้ Export (No data to export)');
+          alert('à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹ƒà¸«à¹‰ Export (No data to export)');
           return;
       }
 
@@ -2547,7 +2530,7 @@ const Board = () => {
             });
 
             if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
-              alert('ไม่พบขอบเขตของเนื้อหาบนกระดาน');
+              alert('à¹„à¸¡à¹ˆà¸žà¸šà¸‚à¸­à¸šà¹€à¸‚à¸•à¸‚à¸­à¸‡à¹€à¸™à¸·à¹‰à¸­à¸«à¸²à¸šà¸™à¸à¸£à¸°à¸”à¸²à¸™');
               return;
             }
 
@@ -2561,7 +2544,7 @@ const Board = () => {
             const height = maxY - minY;
 
             if (width <= 0 || height <= 0) {
-              alert('ขนาดพื้นที่กระดานไม่ถูกต้อง');
+              alert('à¸‚à¸™à¸²à¸”à¸žà¸·à¹‰à¸™à¸—à¸µà¹ˆà¸à¸£à¸°à¸”à¸²à¸™à¹„à¸¡à¹ˆà¸–à¸¹à¸à¸•à¹‰à¸­à¸‡');
               return;
             }
 
@@ -2756,8 +2739,10 @@ const Board = () => {
       const res = await axios.post(`${API_URL}/api/upload`, formData);
       const publicUrl = res.data.url;
 
+      const myAuthor = user?.username || String(user?.id) || 'me';
       const newEl = {
         id: generateId(),
+        author: myAuthor,
         type: 'image',
         url: publicUrl,
         x: -pan.x / zoom + 50,
@@ -2775,8 +2760,7 @@ const Board = () => {
           elementsRef.current = newEls;
           return newEls;
         });
-        setPastStates(p => [...p, elementsRef.current]);
-        setFutureStates([]);
+        setMyRedoStack([]);
         if (fullRedrawRef.current) fullRedrawRef.current();
         if (socket && socket.id) {
           socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
@@ -2814,10 +2798,12 @@ const Board = () => {
       
       const newIds = [];
       const clonedElements = [];
+      const myAuthor = user?.username || String(user?.id) || 'me';
       
       els.forEach(el => {
           const clone = JSON.parse(JSON.stringify(el));
           clone.id = generateId();
+          clone.author = myAuthor;
           
           if (clone.type === 'path') {
               clone.points = clone.points.map(p => p ? { x: p.x + dx, y: p.y + dy } : null);
@@ -2842,6 +2828,7 @@ const Board = () => {
               elementsRef.current = newEls;
               return newEls;
           });
+          setMyRedoStack([]);
           
           setSelectedElementIds(newIds);
           setCurrentTool('select');
@@ -2889,8 +2876,10 @@ const Board = () => {
           const { data: publicUrlData } = supabase.storage.from('board-assests').getPublicUrl(filename);
           const publicUrl = publicUrlData.publicUrl;
           
+          const myAuthor = user?.username || String(user?.id) || 'me';
           const newEl = {
             id: generateId(),
+            author: myAuthor,
             type: 'image',
             x: (pos.x - pan.x) / zoom,
             y: (pos.y - pan.y) / zoom,
@@ -2907,6 +2896,7 @@ const Board = () => {
                 elementsRef.current = newEls;
                 return newEls;
             });
+            setMyRedoStack([]);
             if (fullRedrawRef.current) fullRedrawRef.current();
             if (socket && socket.id) {
               socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
@@ -2917,8 +2907,10 @@ const Board = () => {
         } else if (item.types.includes('text/plain')) {
           const blob = await item.getType('text/plain');
           const text = await blob.text();
+          const myAuthor = user?.username || String(user?.id) || 'me';
           const newEl = {
               id: generateId(),
+              author: myAuthor,
               type: 'text',
               tool: 'text',
               x: (pos.x - pan.x) / zoom,
@@ -2933,6 +2925,7 @@ const Board = () => {
               elementsRef.current = newEls;
               return newEls;
           });
+          setMyRedoStack([]);
           if (fullRedrawRef.current) fullRedrawRef.current();
           if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
           return;
@@ -2954,8 +2947,10 @@ const Board = () => {
       try {
         const text = await navigator.clipboard.readText();
         if (text) {
+           const myAuthor = user?.username || String(user?.id) || 'me';
            const newEl = {
                id: generateId(),
+               author: myAuthor,
                type: 'text',
                tool: 'text',
                x: (pos.x - pan.x) / zoom,
@@ -2970,40 +2965,82 @@ const Board = () => {
                elementsRef.current = newEls;
                return newEls;
            });
+           setMyRedoStack([]);
            if (fullRedrawRef.current) fullRedrawRef.current();
            if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
         }
       } catch(e) {
-          alert('ไม่สามารถอ่านข้อมูลจาก Clipboard ได้ โปรดอนุญาตสิทธิ์ (Permission) หรือคัดลอกข้อความ/รูปภาพก่อนครับ');
+          alert('à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸­à¹ˆà¸²à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸ˆà¸²à¸ Clipboard à¹„à¸”à¹‰ à¹‚à¸›à¸£à¸”à¸­à¸™à¸¸à¸à¸²à¸•à¸ªà¸´à¸—à¸˜à¸´à¹Œ (Permission) à¸«à¸£à¸·à¸­à¸„à¸±à¸”à¸¥à¸­à¸à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡/à¸£à¸¹à¸›à¸ à¸²à¸žà¸à¹ˆà¸­à¸™à¸„à¸£à¸±à¸š');
       }
     }
   };
 
+  // Per-User Undo: only undoes the last element created by the current user
   const handleUndo = () => {
     if (isReadonly) return;
-    if (pastStates.length === 0) {
-        showToast('Nothing to Undo');
-        return;
+    const myAuthorId = user?.username || String(user?.id) || 'me';
+
+    // Find the last element created by this user
+    let targetIndex = -1;
+    for (let i = elementsRef.current.length - 1; i >= 0; i--) {
+      const el = elementsRef.current[i];
+      if (el.isPage || el.locked) continue;
+      // Match current user
+      if (el.author === myAuthorId) {
+        targetIndex = i;
+        break;
+      }
     }
-    const previous = pastStates[pastStates.length - 1];
-    const newPast = pastStates.slice(0, -1);
-    setPastStates(newPast);
-    setFutureStates([elements, ...futureStates]);
-    setElements(previous);
-    if (socket) socket.emit('undo', studentId);
-    showToast('Undo');
+
+    // Fallback: If no element has author tag yet (legacy elements), only allow undo if this is the user's private board or single user
+    if (targetIndex === -1) {
+      showToast('ไม่มีสิ่งที่จะย้อนกลับของคุณ');
+      return;
+    }
+
+    const elementToUndo = elementsRef.current[targetIndex];
+    const newElements = elementsRef.current.filter(el => el.id !== elementToUndo.id);
+
+    elementsRef.current = newElements;
+    setElements(newElements);
+    setMyRedoStack(prev => [...prev, elementToUndo]);
+
+    if (fullRedrawRef.current) fullRedrawRef.current();
+
+    // Broadcast targeted delete so other clients and server delete only this specific stroke
+    if (socket && socket.id) {
+      socket.emit('delete-element', { boardId: studentId, elementId: elementToUndo.id });
+    }
+
+    showToast('ย้อนกลับ (Undo)');
   };
 
+  // Per-User Redo: only redoes the last element undone by the current user
   const handleRedo = () => {
     if (isReadonly) return;
-    if (futureStates.length === 0) return;
-    const next = futureStates[0];
-    const newFuture = futureStates.slice(1);
-    setFutureStates(newFuture);
-    setPastStates([...pastStates, elements]);
-    setElements(next);
-    emitCanvasUpdate(next); // Fallback to full sync for redo
+    if (myRedoStack.length === 0) {
+      showToast('ไม่มีสิ่งที่จะทำซ้ำ');
+      return;
+    }
+
+    const elementToRedo = myRedoStack[myRedoStack.length - 1];
+    setMyRedoStack(prev => prev.slice(0, -1));
+
+    const newElements = [...elementsRef.current, elementToRedo];
+    elementsRef.current = newElements;
+    setElements(newElements);
+
+    if (fullRedrawRef.current) fullRedrawRef.current();
+
+    if (socket && socket.id) {
+      socket.emit('draw-stroke', { boardId: studentId, stroke: elementToRedo, socketId: socket.id });
+    }
+
+    showToast('ทำซ้ำ (Redo)');
   };
+
+  handleUndoRef.current = handleUndo;
+  handleRedoRef.current = handleRedo;
 
   const handleClear = () => {
     if (isReadonly) return;
@@ -3079,7 +3116,7 @@ const Board = () => {
             zoom
         ));
     } else {
-        alert('ยังหาเมาส์ของนักเรียนไม่เจอครับ (นักเรียนอาจจะยังไม่ได้ขยับเมาส์ในตอนนี้)');
+        alert('à¸¢à¸±à¸‡à¸«à¸²à¹€à¸¡à¸²à¸ªà¹Œà¸‚à¸­à¸‡à¸™à¸±à¸à¹€à¸£à¸µà¸¢à¸™à¹„à¸¡à¹ˆà¹€à¸ˆà¸­à¸„à¸£à¸±à¸š (à¸™à¸±à¸à¹€à¸£à¸µà¸¢à¸™à¸­à¸²à¸ˆà¸ˆà¸°à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸‚à¸¢à¸±à¸šà¹€à¸¡à¸²à¸ªà¹Œà¹ƒà¸™à¸•à¸­à¸™à¸™à¸µà¹‰)');
     }
   };
 
@@ -3158,11 +3195,13 @@ const Board = () => {
   const handleDuplicateSelection = () => {
       const newIds = [];
       const clonedElements = [];
+      const myAuthor = user?.username || String(user?.id) || 'me';
       
       elementsRef.current.forEach(el => {
           if (selectedElementIds.includes(el.id)) {
               const clone = JSON.parse(JSON.stringify(el));
               clone.id = generateId();
+              clone.author = myAuthor;
               
               const offset = 20 / zoom;
               if (clone.type === 'path') {
@@ -3189,6 +3228,7 @@ const Board = () => {
               elementsRef.current = newEls;
               return newEls;
           });
+          setMyRedoStack([]);
           
           if (activeLassoPathRef.current) {
               const offset = 20 / zoom;
@@ -3256,11 +3296,11 @@ const Board = () => {
                     ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100' 
                     : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
                 }`}
-                title={studentId === 'teacher_board' ? 'กลับไปบอร์ดของฉัน' : 'ไปที่บอร์ดของครู'}
+                title={studentId === 'teacher_board' ? 'à¸à¸¥à¸±à¸šà¹„à¸›à¸šà¸­à¸£à¹Œà¸”à¸‚à¸­à¸‡à¸‰à¸±à¸™' : 'à¹„à¸›à¸—à¸µà¹ˆà¸šà¸­à¸£à¹Œà¸”à¸‚à¸­à¸‡à¸„à¸£à¸¹'}
               >
                 <ArrowLeft size={20} className={studentId === 'teacher_board' ? '' : 'rotate-180'} />
                 <span className="hidden md:inline">
-                  {studentId === 'teacher_board' ? 'กลับกระดานส่วนตัว' : 'ไปที่บอร์ดของครู (Teacher Board)'}
+                  {studentId === 'teacher_board' ? 'à¸à¸¥à¸±à¸šà¸à¸£à¸°à¸”à¸²à¸™à¸ªà¹ˆà¸§à¸™à¸•à¸±à¸§' : 'à¹„à¸›à¸—à¸µà¹ˆà¸šà¸­à¸£à¹Œà¸”à¸‚à¸­à¸‡à¸„à¸£à¸¹ (Teacher Board)'}
                 </span>
               </button>
               {user?.username === studentId && (
@@ -3315,7 +3355,8 @@ const Board = () => {
           brushSize={brushSize} setBrushSize={setBrushSize}
           handleZoomIn={handleZoomIn} handleZoomOut={handleZoomOut} handleResetZoom={handleResetZoom}
           handleClear={handleClear} handleUndo={handleUndo} handleRedo={handleRedo}
-          canUndo={pastStates.length > 0} canRedo={futureStates.length > 0}
+          canUndo={elements.some(el => !el.isPage && !el.locked && el.author === (user?.username || String(user?.id) || 'me'))}
+          canRedo={myRedoStack.length > 0}
           handleUpload={handleUpload}
           bgTemplate={bgTemplate} setBgTemplate={setBgTemplate}
           handleExport={handleExport}
@@ -3506,7 +3547,7 @@ const Board = () => {
           </div>
         )}
 
-        {textInput && !textInput.isPostit && (
+        {textInput && (
             <input 
                 ref={(input) => {
                     if (input && !input.dataset.focused) {
@@ -3518,57 +3559,34 @@ const Board = () => {
                 type="text"
                 value={textInput.text}
                 onChange={(e) => setTextInput({ ...textInput, text: e.target.value })}
-                onBlur={async () => {
+                onBlur={() => {
                     if (textInput.text.trim()) {
-                        if (textInput.isMath) {
-                            const result = await renderMathToImage(textInput.text, brushColor, brushSize * 4);
-                            if (result) {
-                                const newEl = {
-                                    id: generateId(),
-                                    type: 'math',
-                                    tool: 'math',
-                                    x: textInput.x,
-                                    y: textInput.y,
-                                    text: textInput.text,
-                                    url: result.dataUrl,
-                                    color: brushColor,
-                                    size: brushSize * 4,
-                                    w: result.width,
-                                    h: result.height
-                                };
-                                setElements(prev => {
-                                    const newEls = [...prev, newEl];
-                                    elementsRef.current = newEls;
-                                    return newEls;
-                                });
-                                if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
-                                if (fullRedrawRef.current) fullRedrawRef.current();
-                            }
-                        } else {
-                            const dummyCanvas = document.createElement('canvas');
-                            const ctx = dummyCanvas.getContext('2d');
-                            ctx.font = `${brushSize * 3}px sans-serif`;
-                            const metrics = ctx.measureText(textInput.text);
-                            
-                            const newEl = {
-                                id: generateId(),
-                                type: 'text',
-                                tool: 'text',
-                                x: textInput.x,
-                                y: textInput.y,
-                                text: textInput.text,
-                                color: brushColor,
-                                size: brushSize * 3,
-                                w: metrics.width
-                            };
-                            setElements(prev => {
-                                const newEls = [...prev, newEl];
-                                elementsRef.current = newEls;
-                                return newEls;
-                            });
-                            if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
-                            if (fullRedrawRef.current) fullRedrawRef.current();
-                        }
+                        const dummyCanvas = document.createElement('canvas');
+                        const ctx = dummyCanvas.getContext('2d');
+                        ctx.font = `${brushSize * 3}px sans-serif`;
+                        const metrics = ctx.measureText(textInput.text);
+                        
+                        const myAuthor = user?.username || String(user?.id) || 'me';
+                        const newEl = {
+                            id: generateId(),
+                            author: myAuthor,
+                            type: 'text',
+                            tool: 'text',
+                            x: textInput.x,
+                            y: textInput.y,
+                            text: textInput.text,
+                            color: brushColor,
+                            size: brushSize * 3,
+                            w: metrics.width
+                        };
+                        setElements(prev => {
+                            const newEls = [...prev, newEl];
+                            elementsRef.current = newEls;
+                            return newEls;
+                        });
+                        setMyRedoStack([]);
+                        if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
+                        if (fullRedrawRef.current) fullRedrawRef.current();
                     }
                     setTextInput(null);
                 }}
@@ -3589,62 +3607,6 @@ const Board = () => {
                     zIndex: 50,
                     padding: '4px 8px',
                     borderRadius: '4px'
-                }}
-            />
-        )}
-        
-        {textInput && textInput.isPostit && (
-            <textarea
-                ref={(input) => {
-                    if (input && !input.dataset.focused) {
-                        input.dataset.focused = "true";
-                        setTimeout(() => input.focus(), 10);
-                    }
-                }}
-                value={textInput.text}
-                onChange={(e) => {
-                    setTextInput({ ...textInput, text: e.target.value });
-                    // Auto-resize textarea height
-                    e.target.style.height = 'auto';
-                    e.target.style.height = e.target.scrollHeight + 'px';
-                }}
-                onBlur={() => {
-                    if (textInput.text.trim()) {
-                        const newEl = {
-                            id: generateId(),
-                            type: 'postit',
-                            tool: 'postit',
-                            x: textInput.x,
-                            y: textInput.y,
-                            text: textInput.text,
-                            color: textInput.color || '#fef08a',
-                            size: 20,
-                            w: 100,
-                            h: 100
-                        };
-                        setElements(prev => {
-                            const newEls = [...prev, newEl];
-                            elementsRef.current = newEls;
-                            return newEls;
-                        });
-                        if (socket && socket.id) socket.emit('draw-stroke', { boardId: studentId, stroke: newEl, socketId: socket.id });
-                        if (fullRedrawRef.current) fullRedrawRef.current();
-                    }
-                    setTextInput(null);
-                }}
-                className="absolute z-50 p-3 shadow-xl resize-none outline-none overflow-hidden"
-                style={{
-                    left: `${textInput.x * zoom + pan.x}px`,
-                    top: `${textInput.y * zoom + pan.y}px`,
-                    backgroundColor: textInput.color || '#fef08a',
-                    color: '#000000',
-                    fontFamily: '"Comic Sans MS", "Caveat", cursive, sans-serif',
-                    fontSize: `${20 * zoom}px`,
-                    minWidth: `${100 * zoom}px`,
-                    minHeight: `${100 * zoom}px`,
-                    whiteSpace: 'pre', // Allows it to stretch horizontally until enter is pressed
-                    transform: 'scale(1)',
-                    pointerEvents: 'auto'
                 }}
             />
         )}

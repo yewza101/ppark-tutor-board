@@ -1,7 +1,7 @@
 import { 
   Pencil, Eraser, Circle, Square, Minus, Triangle, 
   ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon,
-  Highlighter, Type, Download, Sigma, StickyNote, UploadCloud, PenTool, MonitorPlay
+  Highlighter, Type, Download, UploadCloud, PenTool, MonitorPlay
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 
@@ -27,8 +27,6 @@ const Toolbar = ({
     { id: 'pencil', icon: Pencil, label: 'Pencil' },
     { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
     { id: 'text', icon: Type, label: 'Text' },
-    { id: 'math', icon: Sigma, label: 'Math Equation' },
-    { id: 'postit', icon: StickyNote, label: 'Post-it Note' },
     { id: 'eraser', icon: Eraser, label: 'Eraser (Normal)' },
     { id: 'eraser-object', icon: Scissors, label: 'Object Eraser' },
     { id: 'laser', icon: Wand2, label: 'Laser Pointer' },
@@ -43,7 +41,7 @@ const Toolbar = ({
     '#000000', '#ef4444', '#3b82f6', '#ec4899'
   ];
 
-  const needsColor = ['pencil', 'highlighter', 'text', 'math', 'line', 'circle', 'rectangle', 'triangle', 'laser', 'postit'].includes(currentTool);
+  const needsColor = ['pencil', 'highlighter', 'text', 'line', 'circle', 'rectangle', 'triangle', 'laser'].includes(currentTool);
   const needsSize = ['pencil', 'highlighter', 'eraser', 'laser', 'line', 'circle', 'rectangle', 'triangle'].includes(currentTool);
 
   return (

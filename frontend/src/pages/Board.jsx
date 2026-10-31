@@ -3546,7 +3546,7 @@ const Board = () => {
                 className="flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 bg-white/90 backdrop-blur shadow-lg border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 font-medium transition-colors text-xs md:text-sm"
                 title="Back to Dashboard"
               >
-                <ArrowLeft size={18} /> <span className="hidden xl:inline">Dashboard</span>
+                <ArrowLeft size={18} /> <span className="hidden 2xl:inline">Dashboard</span>
               </button>
               {returnGroup && (
                 <button
@@ -3554,7 +3554,7 @@ const Board = () => {
                   className="flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 bg-blue-50/90 backdrop-blur shadow-lg border border-blue-100 rounded-2xl text-blue-700 hover:bg-blue-100 font-medium transition-colors text-xs md:text-sm"
                   title={`Back to Monitor (${returnGroup})`}
                 >
-                  <ArrowLeft size={18} /> <span className="hidden xl:inline">Monitor</span>
+                  <ArrowLeft size={18} /> <span className="hidden 2xl:inline">Monitor</span>
                 </button>
               )}
               <button
@@ -3563,7 +3563,7 @@ const Board = () => {
                 title="Track Student (หาเมาส์นักเรียน)"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
-                <span className="hidden xl:inline">Track Student</span>
+                <span className="hidden 2xl:inline">Track Student</span>
               </button>
             </div>
           ) : (
@@ -3586,7 +3586,7 @@ const Board = () => {
                 title={studentId.startsWith('teacher_board') ? 'กลับกระดานส่วนตัว' : 'ไปที่บอร์ดของครู (Teacher Board)'}
               >
                 <ArrowLeft size={18} className={studentId.startsWith('teacher_board') ? '' : 'rotate-180'} />
-                <span className="hidden xl:inline">
+                <span className="hidden 2xl:inline">
                   {studentId.startsWith('teacher_board') ? 'กระดานส่วนตัว' : 'บอร์ดครู'}
                 </span>
               </button>
@@ -3609,7 +3609,7 @@ const Board = () => {
                   )}
                   <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isTeacherOnline ? 'bg-emerald-500' : 'bg-gray-300'}`}></span>
                 </span>
-                <span className="hidden xl:inline font-semibold">
+                <span className="hidden 2xl:inline font-semibold">
                   {isTeacherOnline ? '🎯 ตามครู' : '🎯 หาตำแหน่งครู'}
                 </span>
               </button>
@@ -3621,7 +3621,7 @@ const Board = () => {
                   title="Clear Board"
                 >
                   <Trash2 size={18} />
-                  <span className="hidden xl:inline">Clear Board</span>
+                  <span className="hidden 2xl:inline">Clear Board</span>
                 </button>
               )}
             </div>

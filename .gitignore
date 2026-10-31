@@ -8,3 +8,6 @@ build/
 
 # scratch: dead files moved aside during the Oct-2026 audit, kept out of the tree
 .attic/
+
+# local preview config used for layout checks
+.claude/launch.json

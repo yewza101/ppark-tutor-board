@@ -57,7 +57,7 @@ graph TD
 * **Real-time Client:** Socket.io-client
 * **State Management:** Zustand (`useAuthStore.js` สำหรับจัดการ Token, User Session, Roles)
 * **Canvas Engine:** HTML5 Canvas แบบ Custom 2 ชั้น (Base Canvas + Draft Canvas) ผสานกับอัลกอริทึม `perfect-freehand`
-* **PDF & Documents:** `pdfjs-dist` (ประมวลผล PDF เวกเตอร์เป็น Canvas), `jspdf` & `html2canvas` (ส่งออกกระดานเป็น PDF/Image)
+* **PDF & Documents:** `pdfjs-dist` (ประมวลผล PDF เวกเตอร์เป็น Canvas), `jspdf` (ส่งออกกระดานเป็น PDF — วาดลง Canvas เองแล้วฝังเป็นภาพ ไม่ได้ใช้ `html2canvas`)
 * **Audio / WebRTC:** Web Audio API (`AudioContext`, `AnalyserNode`) + RTCPeerConnection กับ Google STUN Servers
 
 ### 2.2 เทคโนโลยีฝั่ง Backend (`/backend`)
@@ -87,7 +87,22 @@ graph TD
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW() | วันเวลาที่สร้างบัญชี |
 
 > [!NOTE]
-> บัญชี Master Admin ตั้งต้นของระบบคือ `username: adminpark` รหัสผ่าน `adminpark` มีสิทธิ์พิเศษในการลงทะเบียนคุณครูใหม่ และล้างกระดาน/เอกสารทั้งหมดเมื่อจบเทอม
+> บัญชี Master Admin มีสิทธิ์พิเศษในการลงทะเบียนคุณครูใหม่ และล้างกระดาน/เอกสารทั้งหมดเมื่อจบเทอม
+> ชื่อผู้ใช้/รหัสผ่านอ่านจาก `MASTER_ADMIN_USERNAME` / `MASTER_ADMIN_PASSWORD` / `MASTER_ADMIN_CODE` ใน `backend/.env`
+> (เดิมฮาร์ดโค้ดเป็น `adminpark`/`adminpark` ไว้ในซอร์สโค้ด ซึ่งเท่ากับเผยรหัสผ่านแอดมินทั้งระบบไว้ใน Git)
+> `teacher_id` ของนักเรียนเป็นตัวกำหนดว่าคุณครูคนไหนเข้าถึงกระดานของนักเรียนคนนั้นได้ ทั้งทาง REST และ WebSocket
+
+### 3.1.1 ความปลอดภัยของ Socket (Socket Authentication)
+ทุก Socket ต้องส่ง JWT เดียวกับที่ REST API ใช้ ผ่าน `handshake.auth.token`
+เซิร์ฟเวอร์จะปฏิเสธการเชื่อมต่อที่ไม่มี Token (`connect_error: unauthorized`)
+และ **`role` ถูกอ่านจาก Token เท่านั้น ไม่เชื่อค่าที่ไคลเอนต์ส่งมาใน payload อีก**
+
+| กฎ | รายละเอียด |
+|---|---|
+| เข้าห้องได้เฉพาะที่มีสิทธิ์ | นักเรียนเข้าได้แค่กระดานตัวเอง + กระดานครู / ครูเข้าได้แค่นักเรียนที่ `teacher_id` ตรงกับตน (Master เข้าได้ทุกคน) |
+| เขียนได้แค่ห้องที่เข้าอยู่ | ทุก event ตรวจว่า `boardId` ตรงกับห้องที่ socket นั้น join ไว้จริง |
+| คำสั่งระดับกลุ่ม = ครูเท่านั้น | `teacher-clear-room`, `teacher-upload-sheet`, `broadcast-elements`, `force-presentation`, `admin-mute-user` |
+| ยืนยันการเข้าห้อง | เซิร์ฟเวอร์ตอบ `board-joined` เมื่อสำเร็จ และ `join-board-denied` เมื่อถูกปฏิเสธ |
 
 ### 3.2 ตาราง `boards` (ข้อมูลกระดานไวท์บอร์ด)
 | Field | Type | Attributes | Description |
@@ -293,6 +308,88 @@ sequenceDiagram
   - ปรับเป็น Adaptive Responsive Icon Pills (แสดงเฉพาะไอคอนและ Tooltip บนแท็บเล็ต/มือถือ และแสดงข้อความเฉพาะบนจอเดสก์ท็อปขนาดใหญ่ `hidden xl:inline`)
   - ย้ายแถบลอยแจ้งเตือนครูออกนอกจอลงมาไว้ด้านล่างหน้าจอ (`bottom-20`) ไม่ให้ทับเครื่องมือสี
 
+### 10.5 รอบตรวจโค้ดทั้งระบบ (ตุลาคม 2026) — บั๊กที่พบและแก้แล้ว
+
+> [!IMPORTANT]
+> ทุกข้อในหัวข้อนี้แก้แล้วและผ่าน build / lint / self-check แล้ว
+
+#### A. ความปลอดภัย (Security)
+
+| ปัญหา | ผลกระทบเดิม | แก้ไข |
+|---|---|---|
+| Socket ไม่มีการยืนยันตัวตนเลย | ใครก็เปิด WebSocket แล้วยิง `teacher-clear-room` ล้างกระดานเด็กทั้งห้องได้ | บังคับ JWT ใน handshake + ตรวจสิทธิ์ทุก event |
+| `JWT_SECRET` มีค่า fallback อยู่ในโค้ด | ปลอม Token แอดมินได้ | เอา fallback ออก ไม่ตั้ง = ไม่สตาร์ต |
+| `adminpark`/`adminpark` ฮาร์ดโค้ด | รหัสผ่านแอดมินทั้งระบบอยู่ใน Git | ย้ายไป env + ลบ backdoor `admin123` |
+| `POST /clear-all-documents` ไม่เช็ค Master | ครูคนไหนก็ลบกระดาน+ไฟล์ทั้งระบบได้ | ใส่ `requireMaster` |
+| ครูใหม่ได้รหัสร่าม `default-teacher-password` | รู้ชื่อครู = ล็อกอินเป็นครูคนนั้นได้ | สุ่ม hash ต่อคน ล็อกอินได้แค่ Teacher Code |
+| `GET /api/boards/:id` ไม่เช็คเจ้าของ | ครู A อ่านกระดานนักเรียนของครู B ได้ | เช็ค `teacher_id` |
+| `POST /api/upload` ไม่ต้องล็อกอิน | ใครก็อัปไฟล์ขึ้น bucket, อัป HTML/SVG = stored XSS | ต้องมี Token + whitelist เก้พาะรูปภาพ + ไม่ใช้ชื่อไฟล์จากไคลเอนต์ |
+| นักเรียนกด Clear บนกระดานครูได้ | ล้างกระดานทั้งกลุ่ม | ซ่อนปุ่ม + กันทั้ง client และ server |
+
+#### B. บั๊กที่ทำให้ฟีเจอร์ไม่ทำงาน (Broken Features)
+
+| ปัญหา | อาการ | แก้ไข |
+|---|---|---|
+| ปุ่ม "เข้ากระดานสอน" ใช้ `username` แต่นักเรียนใช้ `group_name` | **ครูกับนักเรียนอยู่คนละห้อง ไม่เห็นกันเลย** | เปลี่ยนเป็น dropdown เลือกกลุ่ม ใช้ `group_name` ให้ตรงกัน |
+| `teacher-clear-room` / `teacher-upload-sheet` query ตาราง `students` ที่ไม่มีอยู่ | กดล้างกระดานทั้งห้อง = ไม่เกิดอะไรขึ้น | เปลี่ยนเป็นตาราง `users` + จำกัดเฉพาะนักเรียนของครูคนนั้น |
+| `supabase` ไม่ถูก import ใน `Board.jsx` | **วางรูปจาก Clipboard พังทั้งหมด** (ReferenceError) | ใช้ `/api/upload` ที่มีอยู่แล้ว |
+| PIP ฮาร์ดโค้ด `teacher_board` | นักเรียนกลุ่มอื่นเห็นจอเปล่า | ใช้กระดานตามกลุ่มของนักเรียน |
+| `force-presentation` broadcast ทั้งเซิร์ฟเวอร์ | ครูห้องหนึ่งเปิดนำเสนอ เด็กทุกห้องเด้ง PIP | แยกตามกลุ่ม + เคลียร์ให้เมื่อครูหลุด |
+| `isPresentationMode` เช็ค `=== 'teacher_board'` | ปุ่ม Live Presentation ไม่ทำงานบนกระดานกลุ่ม | ใช้ `startsWith` |
+| ปุ่ม Clear เช็ค `username === studentId` | **ปุ่มไม่โผล่เลย** (boardId เป็นตัวเลขตาม fix 10.3) | เทียบกับ `user.id` |
+| `{student.name}` แต่ API ส่ง `username` | ปุ่มรายชื่อเด็กในแถบล่างว่างเปล่า | ใช้ `username` |
+| MiniBoard อ่าน `pt[0]` แต่ points เป็น `{x,y}` | **ภาพตัวอย่างกระดานเด็กที่ออฟไลน์ขึ้นว่างเปล่า** | อ่าน `pt.x`/`pt.y` |
+| MiniBoard ไฟสถานะดู socket ของครูเอง | ไฟเขียวทุกช่องตลอด ไม่มีความหมาย | ดูจาก `active-boards` + viewport heartbeat จริง |
+| MiniBoard โชว์ debug overlay `SYNCED / P: / Z: / E:` | ตัวเลข debug ขึ้นทับจอครูบน production | ลบออก |
+| `TeacherShortcutBar` early-return ก่อน `useEffect` | ผิด Rules of Hooks (lint error) อาจ crash เมื่อ role เปลี่ยน | ย้าย return ลงหลัง hooks |
+| เครื่องมือ Text แตะแล้วตกไป branch ของ shape | สร้าง element ข้อความเปล่ามองไม่เห็น ค้างในกระดาน | เปิดช่องพิมพ์แทน |
+| `showToast` เขียน state ที่ไม่มีใคร render | กด Undo 2 นิ้วแล้วไม่มี feedback อะไรเลย | render toast จริง |
+| PDF ส่งทั้ง `draw-stroke` ต่อหน้า และ `canvas-update` ทั้งกระดาน | หน้าใบงานซ้ำบนเครื่องคนอื่น | ส่งแค่ทางเดียว |
+| `pdf.worker` ดึงจาก cdnjs | เน็ตโรงเรียนบล็อก CDN = นำเข้า PDF พังเงียบ ๆ | bundle worker มาในโปรเจกต์ |
+| วาง/คัดลอกเส้นตรง ไม่ขยับ `x2,y2` | เส้นที่ paste ออกมาบิดเบี้ยว | ขยับทุกจุด |
+| `JSON.parse(localStorage)` ไม่มี try/catch | ข้อมูลเสีย = จอขาวถาวร เข้าแอปไม่ได้ | ครอบ try/catch + ล้าง Token ที่หมดอายุ |
+| ไม่มี Route Guard | พิมพ์ `/admin` ตรง ๆ แล้วหน้า dashboard ขึ้นมาเลย | เพิ่ม `RequireAuth` |
+| `selectstart` preventDefault ที่ `document` | เลือก/คัดลอกข้อความในแอปไม่ได้เลยทั้งแอป | จำกัดเฉพาะ container ของกระดาน |
+
+#### C. ประสิทธิภาพและหน่วยความจำ (Performance & Memory)
+
+| ปัญหา | ผลกระทบเดิม | แก้ไข |
+|---|---|---|
+| `pastStates` / `futureStates` ไม่มีใครอ่าน | **เก็บ snapshot กระดานทั้งใบทุกเส้น (ทั้งของตัวเองและของคนอื่น) โดยไม่มีใครใช้ → RAM บวมจนแท็บค้าง** | ลบทิ้ง (undo ใช้ `author` + `myRedoStack` อยู่แล้ว) |
+| `JSON.parse(JSON.stringify(elements))` ทุกครั้งที่แตะจอใน select mode | clone กระดานทั้งใบก่อนจะขยับอะไร | `slice()` พอ เพราะ element ถูกแทนที่ ไม่ได้ถูก mutate |
+| Canvas ไม่คูน `devicePixelRatio` | **เส้นบน iPad เรนเดอร์ที่ 1x แล้วถูกยืด → เบลอ** | คูน dpr (cap ที่ 2) ทั้ง Board และ MiniBoard |
+| `getElementBoundingBox` สร้าง `<canvas>` ใหม่ทุกครั้งที่วัดข้อความ | สร้าง DOM canvas ที่ 60fps | ใช้ context เดียวร่วมกัน |
+| `requestAnimationFrame` ต่อ pointermove 1 ครั้ง | Apple Pencil ยิง ~240 ev/s → คิว redraw ท่วม | coalesce เหลือ 1 frame |
+| ลาก selection = emit ต่อ element ต่อ frame | 40 ชิ้น ≈ 640 msg/วินาที | รวมเป็น `update-elements` ก้อนเดียว |
+| ยางลบ emit ต่อเส้นต่อ step | ลบทับเส้นเยอะ = ยิง socket ถล่ม | รวมเป็นก้อน flush ต่อเฟรม + จำกัด interpolation ที่ 64 step |
+| `boardStates` ไม่มีเพดาน | กระดานเดียวโตได้ไม่จำกัดจนเซิร์ฟเวอร์ OOM | cap 20,000 elements |
+| `studentConnectionCount` ไม่ลดเมื่อย้ายกระดาน | เด็กที่ไปบอร์ดครูยังขึ้น "online" บนกระดานตัวเองตลอดไป | ลดค่าตอนออกจากห้องเก่า |
+| `bcrypt.hashSync` / `compareSync` | บล็อก event loop ~100ms ทุกครั้งที่ล็อกอิน = ทุกคนที่กำลังวาดสะดุด | เปลี่ยนเป็น async |
+| `loadingPromises` เก็บ promise ที่ reject ไว้ | DB สะดุดครั้งเดียว = กระดานนั้นพังถาวรจนรีสตาร์ต | `try/finally` |
+| `clear-canvas` ระหว่างโหลดถูก DB ทับ | สั่งล้างแล้วเส้นเก่ากลับมา | ไม่ทับค่าที่มีในแคชแล้ว |
+| dead code | `ScreenShare.jsx`, `VoiceChat.jsx`, `useSocketStore.js`, `out.js`, `debug.js`, `test-rotate.js`, `update_board.js` ไม่มีใครเรียก | ย้ายออก (อยู่ใน `.attic/` และใน git history) |
+| dependency ที่ไม่ได้ใช้ | `fabric` (ใหน่มาก), `katex`, `html2canvas` | ถอดออกจาก `package.json` |
+
+#### D. Voice / WebRTC
+
+| ปัญหา | ผลกระทบเดิม | แก้ไข |
+|---|---|---|
+| `join-voice` ถูกยิง 2 ครั้ง (ทั้งใน onClick และใน useEffect) | เซิร์ฟเวอร์ส่ง `existing-voice-users` ซ้ำ → รื้อ-สร้าง peer connection ใหม่กลางสาย เสียงกระตุก | ยิงครั้งเดียว ติดตามด้วย `joinedRoomRef` + เซิร์ฟเวอร์กัน join ซ้ำ |
+| cleanup ของ effect หยุด mic track | **สลับห้องเสียง = ไมค์ดับ** แล้วขอ `getUserMedia` ใหม่นอก user gesture → iPad ปฏิเสธ (บั๊กเดียวกับ 10.2 กลับมาทางอ้อม) | แยก `teardownPeers()` (ปิดแค่ peer) ออกจาก `cleanup()` (ปิด session) |
+| `getUserMedia` ยังอยู่ใน `useEffect` | ขัดกับหลักการที่ 10.2 แก้ไว้ | เหลือเฉพาะใน `handleJoinVoice` (user gesture) |
+| ICE `disconnected` = ลบ peer ทันที | wifi กระตุกแวบเดียว = เสียงหลุดถาวรทั้งที่ฟื้นเองได้ | รอเฉพาะ `failed` + `restartIce()` + หน่ง 8 วิ |
+| `join-board` ตอน reconnect ใช้ห้องที่ค้างจาก closure | reconnect แล้วกลับเข้าห้องเสียงเดิมผิดห้อง | อ่านจาก ref |
+| ไม่มี TURN | นักเรียนหลัง NAT แบบ symmetric / firewall โรงเรียน ต่อเสียงไม่ได้เลย | รองรับ TURN ผ่าน env (ดู §11.2) |
+| ไม่ปล่อย mic / AudioContext ตอน unmount | ไฟไมค์ค้างติด | เพิ่ม cleanup ตอน unmount |
+
+### 10.6 ข้อจำกัดที่ยังเหลือ (Known Limitations)
+
+1. **Voice เป็น P2P Mesh** — นักเรียน N คนต้องถือ N-1 connection ต่อคน เหมาะกับกลุ่มเล็ก (~6-8 คน) ห้องใหย่ควรเปลี่ยนไป SFU (LiveKit / mediasoup)
+2. **ยังไม่มี TURN server จริง** — ต้องสมัครแล้วใส่ค่าใน env เอง แก้ด้วยโค้ดอย่างเดียวไม่ได้
+3. **Rate limiting เก็บใน memory** — ป้องการ brute-force Teacher Code แล้ว (30 ครั้ง/15 นาที/IP) แต่ค่าอยู่ใน RAM ของแต่ละ instance ถ้า scale เกิน 1 instance ต้องย้ายไป Redis
+4. **กระดานครูเก็บใน memory เท่านั้น** — เซิร์ฟเวอร์รีสตาร์ต = กระดานครูหาย (เป็นการออกแบบเดิม ถ้าต้องการให้คงอยู่ ต้องถอดเงื่อนไข `isTeacherBoardId` ใน `boardCache.js`)
+5. **แต่ละหน้าเปิดหลาย socket** — Board + MiniBoard แต่ละช่อง + Voice Widget แยก socket กันหมด หน้า Monitor ที่มีเด็ก 20 คนจะเปิด 20+ connection ยังทำงานได้ แต่ถ้าจะลด ควรรวมเป็น socket เดียวแล้ว multiplex ด้วย room
+
 ---
 
 ## 11. คู่มือการติดตั้งและการดีพลอย (Setup & Deployment Guide)
@@ -303,17 +400,36 @@ sequenceDiagram
 
 ### 11.2 การตั้งค่าตัวแปรสภาพแวดล้อม (Environment Variables)
 
+> [!IMPORTANT]
+> **ตัวแปรที่เพิ่มใหม่ (ต้องตั้งก่อน Deploy)** — ดูไฟล์ตัวอย่างที่ `backend/.env.example` และ `frontend/.env.example`
+> * `JWT_SECRET` **บังคับ** เซิร์ฟเวอร์จะไม่สตาร์ทถ้าไม่ตั้ง (เดิมมีค่า fallback ที่อยู่ในซอร์สโค้ด ใครก็ปลอม Token แอดมินได้)
+> * `MASTER_ADMIN_PASSWORD` / `MASTER_ADMIN_CODE` **ต้องตั้งถ้าจะใช้บัญชี Master Admin** (เดิมฮาร์ดโค้ด `adminpark`/`adminpark` ไว้ในโค้ด) ถ้าไม่ตั้ง บัญชี Master จะถูกปิดใช้งาน ครูทั่วไปยังล็อกอินด้วย Teacher Code ได้ปกติ
+
 #### Backend (`/backend/.env`):
 ```env
 PORT=3001
-JWT_SECRET=your_super_secret_jwt_key_here
+
+# บังคับ: สร้างด้วย node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+JWT_SECRET=
+
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_KEY=your_supabase_service_role_or_anon_key
+
+# บัญชี Master Admin (เว้นว่าง = ปิดใช้งานบัญชีนี้)
+MASTER_ADMIN_USERNAME=adminpark
+MASTER_ADMIN_PASSWORD=
+MASTER_ADMIN_CODE=
 ```
 
-#### Frontend (`/frontend/.env` หรือใน `config.js`):
+#### Frontend (`/frontend/.env`):
 ```env
 VITE_API_URL=https://your-backend-domain.up.railway.app
+
+# ไม่บังคับ แต่แนะนำมาก: ถ้ามีแค่ STUN นักเรียนที่อยู่หลัง NAT แบบ symmetric
+# หรือ Firewall โรงเรียน จะต่อเสียงหากันไม่ได้เลย
+# VITE_TURN_URL=turn:turn.example.com:3478
+# VITE_TURN_USERNAME=
+# VITE_TURN_CREDENTIAL=
 ```
 
 ### 11.3 คำสั่งรันในเครื่องพัฒนา (Local Development)
@@ -334,12 +450,22 @@ npm run dev
 
 ### 11.4 การทดสอบ Build ก่อนขึ้น Production
 ```bash
-# ทดสอบความถูกต้องของไวยากรณ์ Backend
+# 1. ตรวจไวยากรณ์ Backend
 node -c backend/server.js
 node -c backend/routes/board.js
 node -c backend/routes/admin.js
+node -c backend/routes/auth.js
+node -c backend/boardCache.js
 
-# ทดสอบคอมไพล์ Frontend
+# 2. Self-check ของ board cache (ไม่ต้องต่อ DB จริง)
+#    ครอบเคส: DB ล่มแล้วแคชพัง, clear ระหว่างโหลด,
+#    canvas_data ที่ encode ซ้อน, กระดานครูต้องไม่ถูกเขียนลง DB, debounce save
+node backend/test-boardcache.js
+
+# 3. Lint (ต้องไม่มี error — มีแต่ warning ได้)
+npm --prefix frontend run lint
+
+# 4. ทดสอบคอมไพล์ Frontend
 npm --prefix frontend run build
 ```
 
@@ -376,7 +502,7 @@ npm --prefix frontend run build
 
 | Event Name | Direction | Payload Structure | Description |
 |---|---|---|---|
-| `join-board` | Client → Server | `{ boardId, role }` | เข้าร่วมห้องกระดานและบันทึกสิทธิ์ |
+| `join-board` | Client → Server | `{ boardId }` | เข้าร่วมห้องกระดาน (`role` อ่านจาก JWT ไม่เชื่อ payload) |
 | `draw-progress` | Bidirectional | `{ boardId, path, socketId }` | ส่งเส้นร่างที่กำลังลากอยู่แบบสด |
 | `draw-stroke` | Bidirectional | `{ boardId, stroke, socketId }` | บันทึกเส้นถาวรหลังจากยกปากกา |
 | `update-element` | Bidirectional | `{ boardId, element }` | แก้ไขคุณสมบัติของ Element ที่มีอยู่ |
@@ -393,8 +519,11 @@ npm --prefix frontend run build
 | `webrtc-answer` | Bidirectional | `{ targetSocketId, answer }` | WebRTC Signaling Answer |
 | `webrtc-ice-candidate` | Bidirectional | `{ targetSocketId, candidate }` | WebRTC ICE Candidate |
 | `mic-status-changed` | Bidirectional | `{ boardId, isMuted }` | แจ้งสถานะเปิด/ปิดไมค์ |
-| `admin-mute-user` | Bidirectional | `{ targetSocketId }` | ครูสั่งปิดไมค์นักเรียน |
-| `force-presentation` | Bidirectional | `boolean` | ครูเปิด/ปิดโหมดนำเสนอสด PIP |
+| `admin-mute-user` | Bidirectional | `{ targetSocketId }` | ครูสั่งปิดไมค์นักเรียน (ครูเท่านั้น) |
+| `force-presentation` | Bidirectional | `boolean` | ครูเปิด/ปิดโหมดนำเสนอสด PIP (ส่งเฉพาะนักเรียนกลุ่มเดียวกัน, ครูเท่านั้นส่งได้) |
+| `update-elements` | Bidirectional | `{ boardId, elements[] }` | **เพิ่มใหม่** อัปเดต element หลายชิ้นในข้อความเดียว (ใช้เวลาลาก selection / ยางลบ) |
+| `board-joined` | Server → Client | `{ boardId }` | **เพิ่มใหม่** ยืนยันว่าเข้าห้องสำเร็จ (ให้ไคลเอนต์รอก่อนส่ง viewport) |
+| `join-board-denied` | Server → Client | `{ boardId }` | **เพิ่มใหม่** ไม่มีสิทธิ์เข้ากระดานนี้ |
 
 ---
 

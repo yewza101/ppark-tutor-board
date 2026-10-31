@@ -6,6 +6,7 @@ const { JWT_SECRET } = require('./auth');
 const { clearAllBoardCache } = require('../boardCache');
 
 const router = express.Router();
+const MASTER_USERNAME = process.env.MASTER_ADMIN_USERNAME || 'adminpark';
 
 // Middleware to verify Admin
 const verifyAdmin = (req, res, next) => {
@@ -28,15 +29,24 @@ const verifyAdmin = (req, res, next) => {
 
 router.use(verifyAdmin);
 
+const isMaster = (req) => Boolean(req.user.isMasterAdmin);
+
+// Routes that manage teachers or wipe shared data are master-admin only.
+const requireMaster = (req, res, next) => {
+  if (!isMaster(req)) {
+    return res.status(403).json({ message: 'Only Master Admin can perform this action' });
+  }
+  next();
+};
+
 // Get all students (Master admin sees all; regular teacher sees their assigned students)
 router.get('/students', async (req, res) => {
-  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
   let query = supabase
     .from('users')
     .select('id, username, created_at, group_name, teacher_id')
     .eq('role', 'student');
 
-  if (!isMaster) {
+  if (!isMaster(req)) {
     query = query.eq('teacher_id', req.user.id);
   }
 
@@ -54,9 +64,12 @@ router.post('/students', async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ message: 'Username and password are required' });
   }
+  if (String(username).length > 64 || String(password).length < 4 || String(password).length > 128) {
+    return res.status(400).json({ message: 'Username must be <= 64 chars and password 4-128 chars' });
+  }
 
   try {
-    const hash = bcrypt.hashSync(password, 10);
+    const hash = await bcrypt.hash(password, 10);
     const { data, error } = await supabase
       .from('users')
       .insert([{ username, password_hash: hash, role: 'student', group_name: group_name || 'General', teacher_id: req.user.id }])
@@ -81,17 +94,19 @@ router.put('/students/:id/password', async (req, res) => {
   if (!password) {
     return res.status(400).json({ message: 'Password is required' });
   }
+  if (String(password).length < 4 || String(password).length > 128) {
+    return res.status(400).json({ message: 'Password must be 4-128 chars' });
+  }
 
-  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
-  const hash = bcrypt.hashSync(password, 10);
-  
+  const hash = await bcrypt.hash(password, 10);
+
   let query = supabase
     .from('users')
     .update({ password_hash: hash })
     .eq('id', req.params.id)
     .eq('role', 'student');
   
-  if (!isMaster) {
+  if (!isMaster(req)) {
     query = query.eq('teacher_id', req.user.id);
   }
 
@@ -105,14 +120,13 @@ router.put('/students/:id/password', async (req, res) => {
 
 // Delete student
 router.delete('/students/:id', async (req, res) => {
-  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
   let query = supabase
     .from('users')
     .delete()
     .eq('id', req.params.id)
     .eq('role', 'student');
 
-  if (!isMaster) {
+  if (!isMaster(req)) {
     query = query.eq('teacher_id', req.user.id);
   }
 
@@ -125,19 +139,16 @@ router.delete('/students/:id', async (req, res) => {
 });
 
 // Register a new teacher (Master admin only)
-router.post('/register-teacher', async (req, res) => {
-  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
-  if (!isMaster) {
-    return res.status(403).json({ message: 'Only Master Admin (adminpark) can register new teachers' });
-  }
-
+router.post('/register-teacher', requireMaster, async (req, res) => {
   const { teacher_code, username } = req.body;
-  
+
   if (!teacher_code || !username) {
     return res.status(400).json({ message: 'Username and teacher code are required' });
   }
 
-  const defaultPasswordHash = bcrypt.hashSync('default-teacher-password', 10);
+  // Teachers sign in with their teacher_code, never with a password. Give the row a
+  // random unguessable hash so /api/auth/login can never be used to impersonate them.
+  const defaultPasswordHash = await bcrypt.hash(require('crypto').randomBytes(32).toString('hex'), 10);
 
   const { data, error } = await supabase
     .from('users')
@@ -160,17 +171,12 @@ router.post('/register-teacher', async (req, res) => {
 });
 
 // Get all teachers (for master admin management)
-router.get('/teachers', async (req, res) => {
-  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
-  if (!isMaster) {
-    return res.status(403).json({ message: 'Forbidden' });
-  }
-
+router.get('/teachers', requireMaster, async (req, res) => {
   const { data: teachers, error } = await supabase
     .from('users')
     .select('id, username, teacher_code, created_at')
     .eq('role', 'admin')
-    .neq('username', 'adminpark')
+    .neq('username', MASTER_USERNAME)
     .order('id', { ascending: false });
 
   if (error) {
@@ -180,12 +186,7 @@ router.get('/teachers', async (req, res) => {
 });
 
 // Delete a teacher (Master admin only)
-router.delete('/teachers/:id', async (req, res) => {
-  const isMaster = req.user.isMasterAdmin || req.user.username === 'adminpark';
-  if (!isMaster) {
-    return res.status(403).json({ message: 'Only Master Admin (adminpark) can delete teachers' });
-  }
-
+router.delete('/teachers/:id', requireMaster, async (req, res) => {
   const teacherId = req.params.id;
   
   // Guard: Never delete adminpark
@@ -195,7 +196,7 @@ router.delete('/teachers/:id', async (req, res) => {
     .eq('id', teacherId)
     .single();
 
-  if (targetUser?.username === 'adminpark') {
+  if (targetUser?.username === MASTER_USERNAME) {
     return res.status(400).json({ message: 'Cannot delete master admin' });
   }
 
@@ -214,7 +215,7 @@ router.delete('/teachers/:id', async (req, res) => {
 
 // Master System Cleanup: Clear all board cache, canvas drawings, and uploaded documents
 // IMPORTANT: Does NOT delete student or teacher accounts from `users`
-router.post('/clear-all-documents', async (req, res) => {
+router.post('/clear-all-documents', requireMaster, async (req, res) => {
   try {
     // 1. Clear in-memory board cache and debounced timers
     clearAllBoardCache();
@@ -233,18 +234,21 @@ router.post('/clear-all-documents', async (req, res) => {
     // 3. Clear all files in storage bucket 'board-assests'
     let deletedFilesCount = 0;
     try {
-      const { data: files } = await supabase.storage
-        .from('board-assests')
-        .list('', { limit: 1000 });
+      // list() is capped per call, so page until the bucket is empty.
+      for (let page = 0; page < 200; page++) {
+        const { data: files } = await supabase.storage
+          .from('board-assests')
+          .list('', { limit: 1000, offset: 0 });
 
-      if (files && files.length > 0) {
-        const filePaths = files.map(f => f.name).filter(Boolean);
-        if (filePaths.length > 0) {
-          const { error: delError } = await supabase.storage
-            .from('board-assests')
-            .remove(filePaths);
-          if (!delError) deletedFilesCount = filePaths.length;
-        }
+        const filePaths = (files || []).map(f => f.name).filter(Boolean);
+        if (filePaths.length === 0) break;
+
+        const { error: delError } = await supabase.storage
+          .from('board-assests')
+          .remove(filePaths);
+        if (delError) break;
+        deletedFilesCount += filePaths.length;
+        if (filePaths.length < 1000) break;
       }
     } catch (storageErr) {
       console.warn('Storage files cleanup notice:', storageErr);

@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('./auth');
 const { getBoardState } = require('../boardCache');
+const supabase = require('../db/database');
 
 const router = express.Router();
 
@@ -26,23 +27,56 @@ router.use(verifyAuth);
 // Get board data for a specific user
 router.get('/:userId', async (req, res) => {
   const userIdParam = req.params.userId;
-  const isTeacherBoard = typeof userIdParam === 'string' && userIdParam.startsWith('teacher_board');
-  let targetUserId = userIdParam;
-  
-  if (!isTeacherBoard) {
-    if (userIdParam === req.user.username || String(userIdParam) === String(req.user.id)) {
-      targetUserId = req.user.id;
-    } else {
-      targetUserId = parseInt(userIdParam, 10);
+  const isTeacherBoard = userIdParam.startsWith('teacher_board');
+
+  // Teacher boards are shared rooms, but cap the id length so a client cannot
+  // mint unbounded cache keys by spamming random suffixes.
+  if (isTeacherBoard) {
+    if (userIdParam.length > 128) {
+      return res.status(400).json({ message: 'Invalid board id' });
+    }
+    try {
+      const elements = await getBoardState(userIdParam);
+      return res.json({ canvas_data: JSON.stringify(elements) });
+    } catch (err) {
+      console.error('Error fetching board:', err);
+      return res.status(500).json({ message: 'Error fetching board' });
     }
   }
-  
-  // Student can only access their own board or any teacher board
-  if (req.user.role === 'student' && !isTeacherBoard) {
-    if (targetUserId !== req.user.id && userIdParam !== req.user.username && String(userIdParam) !== String(req.user.id)) {
+
+  // Students may only ever read their own board, by id or by username.
+  if (req.user.role === 'student') {
+    if (userIdParam !== req.user.username && String(userIdParam) !== String(req.user.id)) {
       return res.status(403).json({ message: 'Forbidden' });
     }
-    targetUserId = req.user.id;
+    try {
+      const elements = await getBoardState(req.user.id);
+      return res.json({ canvas_data: JSON.stringify(elements) });
+    } catch (err) {
+      console.error('Error fetching board:', err);
+      return res.status(500).json({ message: 'Error fetching board' });
+    }
+  }
+
+  // Teachers: numeric id only, and only for a student they own.
+  const targetUserId = parseInt(userIdParam, 10);
+  if (!Number.isInteger(targetUserId)) {
+    return res.status(400).json({ message: 'Invalid board id' });
+  }
+
+  if (!req.user.isMasterAdmin) {
+    const { data: student } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', targetUserId)
+      .eq('role', 'student')
+      .eq('teacher_id', req.user.id)
+      .single();
+
+    // Without this check any teacher could read every other teacher's students' boards.
+    if (!student) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
   }
 
   try {

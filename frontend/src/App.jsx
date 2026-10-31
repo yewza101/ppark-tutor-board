@@ -14,16 +14,29 @@ function VoiceWrapper() {
   return <GlobalVoiceWidget />;
 }
 
+// The routes used to render for anyone who typed the URL; only the API calls failed.
+// Guard them so an unauthenticated visitor never sees the dashboard shell at all.
+function RequireAuth({ children, role }) {
+  const { user, token } = useAuthStore();
+  const location = useLocation();
+  if (!user || !token) return <Navigate to="/login" replace state={{ from: location }} />;
+  if (role && user.role !== role) {
+    return <Navigate to={user.role === 'admin' ? '/admin' : `/board/${user.id}`} replace />;
+  }
+  return children;
+}
+
 function App() {
   return (
     <Router>
       <VoiceWrapper />
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/board/:studentId" element={<Board />} />
-        <Route path="/monitor/:groupName" element={<GroupMonitor />} />
+        <Route path="/admin" element={<RequireAuth role="admin"><AdminDashboard /></RequireAuth>} />
+        <Route path="/board/:studentId" element={<RequireAuth><Board /></RequireAuth>} />
+        <Route path="/monitor/:groupName" element={<RequireAuth role="admin"><GroupMonitor /></RequireAuth>} />
         <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
   );

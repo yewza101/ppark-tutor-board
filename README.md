@@ -24,11 +24,11 @@ The project is structured as a monorepo with `frontend` and `backend` directorie
 
 ### Frontend
 - **Framework:** React 19 + Vite
-- **Canvas Engine:** Fabric.js (v7)
+- **Canvas Engine:** Custom two-layer HTML5 Canvas (base + draft) with perfect-freehand
 - **State Management:** Zustand
 - **Real-time Communication:** Socket.io-client
 - **Styling:** Tailwind CSS (v4)
-- **Utilities:** Axios (HTTP client), html2canvas / jspdf (exporting), pdfjs-dist (PDF rendering), KaTeX (Math rendering), Lucide React (Icons).
+- **Utilities:** Axios (HTTP client), jspdf (PDF export), pdfjs-dist (PDF rendering), Lucide React (Icons).
 
 ### Backend
 - **Server:** Node.js with Express 5
@@ -77,13 +77,25 @@ The application utilizes **Supabase** (PostgreSQL) for data persistence and file
    ```bash
    npm install
    ```
-3. Set up environment variables. Create a `.env` file in the `backend` directory:
+3. Set up environment variables. Copy `backend/.env.example` to `backend/.env` and fill it in:
    ```env
    PORT=3001
-   JWT_SECRET=your_super_secret_jwt_key
+
+   # Required - the server refuses to start without it.
+   # Generate: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+   JWT_SECRET=
+
    SUPABASE_URL=https://your-project-id.supabase.co
    SUPABASE_KEY=your_supabase_anon_or_service_key
+
+   # Master admin. Leave blank and the account is disabled; teachers still sign
+   # in with their teacher_code, but nobody can register new teachers.
+   MASTER_ADMIN_USERNAME=adminpark
+   MASTER_ADMIN_PASSWORD=
+   MASTER_ADMIN_CODE=
    ```
+   The frontend has its own `frontend/.env.example` (API URL, and an optional TURN
+   server for voice chat).
 4. Run the Supabase schema script (`supabase_schema.sql`) in your Supabase SQL editor to create the necessary tables and initial admin account.
 5. Start the backend server:
    ```bash

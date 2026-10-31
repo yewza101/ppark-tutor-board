@@ -11,6 +11,7 @@ const GroupMonitor = () => {
   const navigate = useNavigate();
   const { user, token, logout } = useAuthStore();
   const [students, setStudents] = useState([]);
+  const [activeBoards, setActiveBoards] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Decode the URL param (e.g. "Class%201" -> "Class 1")
@@ -27,14 +28,14 @@ const GroupMonitor = () => {
         const res = await axios.get(`${API_URL}/api/admin/students`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        
+
         // Filter students by group name
         // "General" is used if group_name is falsy
         const filtered = res.data.filter(s => {
           const sGroup = s.group_name || 'General';
           return sGroup === decodedGroupName;
         });
-        
+
         setStudents(filtered);
       } catch (err) {
         console.error(err);
@@ -48,7 +49,24 @@ const GroupMonitor = () => {
     };
 
     fetchGroupStudents();
+
+    // Who is actually on a board right now, so each tile can show a real status dot.
+    const fetchActiveBoards = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/api/admin/active-boards`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setActiveBoards(res.data || []);
+      } catch {
+        /* non-fatal: the dots just stay grey */
+      }
+    };
+    fetchActiveBoards();
+    const interval = setInterval(fetchActiveBoards, 12000);
+    return () => clearInterval(interval);
   }, [user, token, navigate, logout, decodedGroupName]);
+
+  const onlineCount = students.filter(s => activeBoards.includes(String(s.id))).length;
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
@@ -56,7 +74,7 @@ const GroupMonitor = () => {
       <header className="bg-white shadow-sm sticky top-0 z-20 w-full">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => navigate('/admin')}
               className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
               title="Back to Dashboard"
@@ -68,9 +86,9 @@ const GroupMonitor = () => {
               Monitor: {decodedGroupName}
             </h1>
           </div>
-          
+
           <div className="text-sm text-gray-500 font-medium">
-            {students.length} Student{students.length !== 1 && 's'} Active
+            {onlineCount} of {students.length} online
           </div>
         </div>
       </header>
@@ -90,10 +108,11 @@ const GroupMonitor = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {students.map(student => (
-              <MiniBoard 
-                key={student.id} 
-                student={student} 
+              <MiniBoard
+                key={student.id}
+                student={student}
                 token={token}
+                isOnline={activeBoards.includes(String(student.id))}
               />
             ))}
           </div>

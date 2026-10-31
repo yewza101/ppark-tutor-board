@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { io } from 'socket.io-client';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { API_URL } from '../config';
+import { createSocket } from '../socket';
 import { getStroke } from 'perfect-freehand';
 
 // Utility for freehand path
@@ -20,18 +20,22 @@ const getSvgPathFromStroke = (stroke) => {
   return d.join(' ');
 };
 
-const MiniBoard = ({ student, token }) => {
+const MiniBoard = ({ student, token, isOnline }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const navigate = useNavigate();
-  
+
   const [elements, setElements] = useState([]);
-  const [isConnected, setIsConnected] = useState(false);
+  // Whether the STUDENT is on their board. The old flag tracked this browser's own
+  // socket, so every tile showed a green dot no matter what the student was doing.
+  const [isStudentOnline, setIsStudentOnline] = useState(Boolean(isOnline));
   const [redrawTrigger, setRedrawTrigger] = useState(0);
   const [renderError, setRenderError] = useState(null);
   const imageCacheRef = useRef({});
+  const cssSizeRef = useRef({ w: 0, h: 0, dpr: 1 });
   const remotePaths = useRef({});
   const remoteViewport = useRef(null);
+  const lastViewportAt = useRef(0);
 
   // Fetch initial board state
   useEffect(() => {
@@ -40,20 +44,20 @@ const MiniBoard = ({ student, token }) => {
         const res = await axios.get(`${API_URL}/api/boards/${student.id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        
+
         let parsed = [];
         if (res.data.canvas_data) {
             parsed = res.data.canvas_data;
             if (typeof parsed === 'string') {
-              try { parsed = JSON.parse(parsed); } catch(e) { parsed = []; }
+              try { parsed = JSON.parse(parsed); } catch { parsed = []; }
             }
             if (typeof parsed === 'string') {
-              try { parsed = JSON.parse(parsed); } catch(e) { parsed = []; }
+              try { parsed = JSON.parse(parsed); } catch { parsed = []; }
             }
         }
         setElements(Array.isArray(parsed) ? parsed : []);
       } catch (err) {
-        console.error('Failed to load board for', student.username, err);
+        console.error('Failed to load board for student', student.id, err);
       }
     };
     fetchBoard();
@@ -61,15 +65,14 @@ const MiniBoard = ({ student, token }) => {
 
   // Socket connection
   useEffect(() => {
-    const socket = io(API_URL);
-    
-    socket.on('connect', () => {
-      setIsConnected(true);
-      socket.emit('join-board', { boardId: student.id, role: 'admin' });
-    });
+    setIsStudentOnline(Boolean(isOnline));
+  }, [isOnline]);
 
-    socket.on('disconnect', () => {
-      setIsConnected(false);
+  useEffect(() => {
+    const socket = createSocket(token);
+
+    socket.on('connect', () => {
+      socket.emit('join-board', { boardId: student.id, role: 'admin' });
     });
 
     socket.on('canvas-update', (updatedElements) => {
@@ -107,27 +110,54 @@ const MiniBoard = ({ student, token }) => {
       setElements(prev => prev.filter(el => el.id !== elementId));
     });
 
+    socket.on('update-elements', (data) => {
+      if (!data || !Array.isArray(data.elements)) return;
+      const byId = new Map(data.elements.filter(Boolean).map(el => [el.id, el]));
+      setElements(prev => prev.map(el => byId.get(el.id) || el));
+    });
+
     socket.on('viewport-update', (data) => {
+      if (!data || data.role === 'admin') return; // ignore other teachers viewing this board
       remoteViewport.current = data;
+      lastViewportAt.current = Date.now();
+      setIsStudentOnline(true);
       setRedrawTrigger(prev => prev + 1);
     });
 
+    socket.on('cursor-leave', () => {
+      remoteViewport.current = null;
+      lastViewportAt.current = 0;
+      setRedrawTrigger(prev => prev + 1);
+    });
+
+    // Clients heartbeat their viewport every 25s; if nothing arrives the student left.
+    // Without this the thumbnail stayed frozen on a stale viewport forever.
+    const staleCheck = setInterval(() => {
+      if (lastViewportAt.current && Date.now() - lastViewportAt.current > 40000) {
+        remoteViewport.current = null;
+        lastViewportAt.current = 0;
+        setIsStudentOnline(false);
+        setRedrawTrigger(prev => prev + 1);
+      }
+    }, 10000);
+
     return () => {
+      clearInterval(staleCheck);
       socket.disconnect();
     };
-  }, [student.id]);
+  }, [student.id, token]);
 
   const drawElement = useCallback((ctx, el, currentScale = 1.0) => {
     if (!el || !el.type) return;
     try {
       ctx.save();
       ctx.beginPath();
-      
+
       if (el.tool === 'highlighter') {
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 0.35;
       }
-      
+
       ctx.strokeStyle = el.color || '#000000';
       ctx.fillStyle = el.color || '#000000';
       let lw = el.size || 5;
@@ -154,7 +184,7 @@ const MiniBoard = ({ student, token }) => {
           if (!p2dToDraw || !(p2dToDraw instanceof Path2D)) {
             const p2d = new Path2D();
             let pts = [];
-            
+
             const drawFreehand = (points) => {
                 if (!points || points.length === 0) return;
                 const strokePoints = getStroke(points, {
@@ -180,8 +210,8 @@ const MiniBoard = ({ student, token }) => {
               }
             }
             if (pts.length > 0) drawFreehand(pts);
-            
-            try { el.path2d = p2d; } catch (e) {}
+
+            try { el.path2d = p2d; } catch {}
             p2dToDraw = p2d;
           }
           ctx.fill(p2dToDraw);
@@ -221,12 +251,15 @@ const MiniBoard = ({ student, token }) => {
           const img = new Image();
           img.crossOrigin = 'Anonymous';
           img.src = el.url;
+          imageCacheRef.current[el.url] = 'loading';
           img.onload = () => {
             imageCacheRef.current[el.url] = img;
-            redrawCanvas(); // Force redraw when image loads
+            // Go through a ref: calling redrawCanvas directly used this callback's
+            // first-render closure, which still had an empty element list.
+            if (redrawRef.current) redrawRef.current();
           };
-          imageCacheRef.current[el.url] = 'loading';
-        } else if (imageCacheRef.current[el.url] !== 'loading') {
+          img.onerror = () => { imageCacheRef.current[el.url] = 'error'; };
+        } else if (imageCacheRef.current[el.url] instanceof HTMLImageElement) {
           const img = imageCacheRef.current[el.url];
           ctx.drawImage(img, el.x || 0, el.y || 0, el.w || 100, el.h || 100);
         }
@@ -249,33 +282,33 @@ const MiniBoard = ({ student, token }) => {
         }
         ctx.font = `${fontSize}px "Comic Sans MS", "Caveat", cursive, sans-serif`;
         ctx.textBaseline = 'top';
-        
+
         const lines = (el.text || '').split('\n');
         let maxTextW = 50;
         for(let line of lines) {
            const w = ctx.measureText(line).width;
            if (w > maxTextW) maxTextW = w;
         }
-        
+
         const w = maxTextW + (padding * 2);
         const h = (lines.length * (fontSize * 1.5)) + (padding * 2);
-        
+
         // Shadow
         ctx.shadowColor = 'rgba(0,0,0,0.15)';
         ctx.shadowBlur = 10;
         ctx.shadowOffsetX = 3;
         ctx.shadowOffsetY = 3;
-        
+
         // Post-it body
         ctx.fillStyle = el.color || '#fef08a';
         ctx.fillRect(el.x || 0, el.y || 0, w, h);
-        
+
         // Reset shadow
         ctx.shadowBlur = 0;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
         ctx.shadowColor = 'transparent';
-        
+
         // Text
         ctx.fillStyle = '#000000';
         lines.forEach((line, i) => {
@@ -295,29 +328,18 @@ const MiniBoard = ({ student, token }) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    // The backing store is in device pixels; everything below works in CSS pixels.
+    const { dpr } = cssSizeRef.current;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
+
     // Set a solid background for the thumbnail
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Viewport debug indicator
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = remoteViewport.current ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 0, 0, 0.8)';
-    ctx.font = '12px sans-serif';
-    ctx.fillText(remoteViewport.current ? 'SYNCED' : 'NOT SYNCED', 10, 50);
-    if (remoteViewport.current) {
-        ctx.fillText('P:' + remoteViewport.current.pan.x + ',' + remoteViewport.current.pan.y, 10, 65);
-        ctx.fillText('Z:' + remoteViewport.current.zoom, 10, 80);
-        ctx.fillText('S:' + remoteViewport.current.width + 'x' + remoteViewport.current.height, 10, 95);
-        ctx.fillText('E:' + elements.length, 10, 110);
-    }
-    ctx.restore();
-
-    ctx.save();
-    const cWidth = canvas.width || 300;
-    const cHeight = canvas.height || 200;
+    const cWidth = cssSizeRef.current.w || 300;
+    const cHeight = cssSizeRef.current.h || 200;
 
     if (remoteViewport.current) {
         const { pan, zoom, width, height } = remoteViewport.current;
@@ -346,17 +368,20 @@ const MiniBoard = ({ student, token }) => {
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             allElements.forEach(el => {
                 if (!el) return;
-                if (el.type === 'path' || el.type === 'lasso') {
-                    if (el.points && Array.isArray(el.points)) {
-                        el.points.forEach(pt => {
-                            if (pt) {
-                                if (pt[0] < minX) minX = pt[0];
-                                if (pt[0] > maxX) maxX = pt[0];
-                                if (pt[1] < minY) minY = pt[1];
-                                if (pt[1] > maxY) maxY = pt[1];
-                            }
-                        });
-                    }
+                if (Array.isArray(el.points) && el.points.length > 0) {
+                    // Points are {x, y} objects, never [x, y] pairs. Reading pt[0]
+                    // left every freehand board measuring as empty, so the thumbnail
+                    // fell back to a blind 0.3 scale at the origin and looked blank.
+                    el.points.forEach(pt => {
+                        if (!pt) return;
+                        const px = Array.isArray(pt) ? pt[0] : pt.x;
+                        const py = Array.isArray(pt) ? pt[1] : pt.y;
+                        if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+                        if (px < minX) minX = px;
+                        if (px > maxX) maxX = px;
+                        if (py < minY) minY = py;
+                        if (py > maxY) maxY = py;
+                    });
                 } else if (el.type === 'line') {
                     let pX1 = Number(el.x1) || 0;
                     let pX2 = Number(el.x2) || 0;
@@ -417,23 +442,26 @@ const MiniBoard = ({ student, token }) => {
 
         elements.filter(el => el.type === 'image').forEach(el => drawElement(ctx, el, activeScale));
         elements.filter(el => el.type !== 'image').forEach(el => drawElement(ctx, el, activeScale));
-        
+
         // Draw in-progress strokes
         Object.values(remotePaths.current).forEach(path => {
           if (path) drawElement(ctx, path, activeScale);
         });
-        
+
     } catch (e) {
         console.error('MiniBoard Inner Draw Error:', e);
         setRenderError(e.message || 'Inner Draw Error');
     }
-    
+
     ctx.restore();
     } catch (err) {
         console.error('MiniBoard Fatal Render Error:', err);
         setRenderError(err.message || 'Fatal Render Error');
     }
   }, [elements, drawElement]);
+
+  const redrawRef = useRef(null);
+  redrawRef.current = redrawCanvas;
 
   const redrawPending = useRef(false);
 
@@ -461,11 +489,14 @@ const MiniBoard = ({ student, token }) => {
     const resizeObserver = new ResizeObserver(entries => {
       if (!canvasRef.current || entries.length === 0) return;
       const { width, height } = entries[0].contentRect;
-      
-      // Set actual pixel dimensions to match display size for crisp rendering
-      canvasRef.current.width = width;
-      canvasRef.current.height = height;
-      
+      if (width === 0 || height === 0) return;
+
+      // Thumbnails were sized at 1x and stretched by CSS, which looked muddy on Retina.
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvasRef.current.width = Math.round(width * dpr);
+      canvasRef.current.height = Math.round(height * dpr);
+      cssSizeRef.current = { w: width, h: height, dpr };
+
       // Force redraw when size changes
       setRedrawTrigger(prev => prev + 1);
     });
@@ -473,12 +504,12 @@ const MiniBoard = ({ student, token }) => {
     if (containerRef.current) {
       resizeObserver.observe(containerRef.current);
     }
-    
+
     return () => resizeObserver.disconnect();
   }, []);
 
   return (
-    <div 
+    <div
       className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer flex flex-col h-64 relative group"
       onClick={() => navigate(`/board/${student.id}?group=${encodeURIComponent(student.group_name || 'General')}`, { state: { returnToGroup: student.group_name || 'General' } })}
     >
@@ -486,10 +517,13 @@ const MiniBoard = ({ student, token }) => {
       <div className="bg-gray-50 px-3 py-2 border-b border-gray-100 flex justify-between items-center z-10">
         <span className="font-semibold text-gray-700 truncate">{student.username}</span>
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-300'}`} title={isConnected ? 'Connected' : 'Offline'}></span>
+          <span
+            className={`w-2 h-2 rounded-full ${isStudentOnline ? 'bg-green-500' : 'bg-gray-300'}`}
+            title={isStudentOnline ? 'Student is on this board' : 'Student is offline'}
+          ></span>
         </div>
       </div>
-      
+
       {/* Canvas Container */}
       <div ref={containerRef} className="flex-1 w-full h-full relative overflow-hidden bg-gray-100">
         {renderError && (
@@ -497,11 +531,11 @@ const MiniBoard = ({ student, token }) => {
             <b>CRASH:</b> {renderError}
           </div>
         )}
-        <canvas 
+        <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full"
         />
-        
+
         {/* Overlay hover effect */}
         <div className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/5 transition-colors flex items-center justify-center">
             <span className="opacity-0 group-hover:opacity-100 bg-white/90 text-blue-600 px-4 py-2 rounded-lg font-medium shadow-sm transition-all transform scale-95 group-hover:scale-100">

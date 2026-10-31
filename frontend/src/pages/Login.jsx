@@ -9,28 +9,26 @@ const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [teacherCode, setTeacherCode] = useState('');
-  
+
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   const login = useAuthStore(state => state.login);
   const navigate = useNavigate();
 
   const handleStudentLogin = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
     setLoading(true);
-    
+
     try {
       const response = await axios.post(`${API_URL}/api/auth/login`, {
         username,
         password
       });
-      
+
       login(response.data.user, response.data.token);
-      
+
       if (response.data.user.role === 'admin') {
         navigate('/admin');
       } else {
@@ -46,14 +44,13 @@ const Login = () => {
   const handleTeacherLogin = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
     setLoading(true);
-    
+
     try {
       const response = await axios.post(`${API_URL}/api/auth/login-teacher`, {
         teacher_code: teacherCode.trim()
       });
-      
+
       login(response.data.user, response.data.token);
       navigate('/admin');
     } catch (err) {
@@ -70,7 +67,7 @@ const Login = () => {
           <h2 className="text-3xl font-bold text-gray-900">Welcome Back</h2>
           <p className="mt-2 text-gray-600">Please sign in to continue</p>
         </div>
-        
+
         <div className="flex border-b border-gray-200 mt-6">
           <button
             className={`flex-1 py-2 text-center text-sm font-medium ${activeTab === 'student' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
@@ -92,12 +89,6 @@ const Login = () => {
           </div>
         )}
 
-        {success && (
-          <div className="p-3 text-sm text-green-600 bg-green-100 rounded-lg mt-4">
-            {success}
-          </div>
-        )}
-
         {activeTab === 'student' ? (
           <form className="mt-4 space-y-6" onSubmit={handleStudentLogin}>
             <div className="space-y-4">
@@ -106,17 +97,23 @@ const Login = () => {
                 <input
                   type="text"
                   required
+                  name="username"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
                   className="w-full px-4 py-2 mt-1 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700">Password</label>
                 <input
                   type="password"
                   required
+                  name="password"
+                  autoComplete="current-password"
                   className="w-full px-4 py-2 mt-1 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -140,6 +137,8 @@ const Login = () => {
                 <input
                   type="password"
                   required
+                  name="teacher-code"
+                  autoComplete="off"
                   className="w-full px-4 py-2 mt-1 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
                   value={teacherCode}
                   onChange={(e) => setTeacherCode(e.target.value)}

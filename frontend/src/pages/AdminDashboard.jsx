@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Trash2, UserPlus, KeyRound, ExternalLink, LogOut, ShieldAlert, Users, Database, AlertTriangle, GraduationCap } from 'lucide-react';
@@ -11,48 +11,29 @@ const AdminDashboard = () => {
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
-  
+
   // Register Teacher states
   const [newTeacherName, setNewTeacherName] = useState('');
   const [newTeacherCode, setNewTeacherCode] = useState('');
-  
+
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [activeBoards, setActiveBoards] = useState([]);
   const [isClearing, setIsClearing] = useState(false);
-  
+
   const { user, token, logout } = useAuthStore();
   const navigate = useNavigate();
 
-  const isMasterAdmin = user?.username === 'adminpark' || user?.isMasterAdmin;
+  const isMasterAdmin = Boolean(user?.isMasterAdmin);
 
-  useEffect(() => {
-    if (!user || user.role !== 'admin') {
-      navigate('/login');
-      return;
-    }
-    fetchStudents();
-    if (isMasterAdmin) {
-      fetchTeachers();
-    }
-    
-    const fetchActiveBoards = async () => {
-      try {
-        const res = await axios.get(`${API_URL}/api/admin/active-boards`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setActiveBoards(res.data || []);
-      } catch (err) {
-        // silently fail
-      }
-    };
-    
-    fetchActiveBoards();
-    const interval = setInterval(fetchActiveBoards, 12000);
-    return () => clearInterval(interval);
-  }, [user, navigate, token, isMasterAdmin]);
+  // Teacher boards are keyed by group, same as the id students navigate to.
+  const groupNames = students.length > 0
+    ? [...new Set(students.map(s => s.group_name || 'General'))].sort()
+    : ['General'];
 
-  const fetchStudents = async () => {
+
+
+  const fetchStudents = useCallback(async () => {
     try {
       const res = await axios.get(`${API_URL}/api/admin/students`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -65,9 +46,9 @@ const AdminDashboard = () => {
         navigate('/login');
       }
     }
-  };
+  }, [token, logout, navigate]);
 
-  const fetchTeachers = async () => {
+  const fetchTeachers = useCallback(async () => {
     try {
       const res = await axios.get(`${API_URL}/api/admin/teachers`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -76,14 +57,40 @@ const AdminDashboard = () => {
     } catch (err) {
       console.error('Failed to fetch teachers', err);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'admin') {
+      navigate('/login');
+      return;
+    }
+    fetchStudents();
+    if (isMasterAdmin) {
+      fetchTeachers();
+    }
+
+    const fetchActiveBoards = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/api/admin/active-boards`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setActiveBoards(res.data || []);
+      } catch {
+        // silently fail
+      }
+    };
+
+    fetchActiveBoards();
+    const interval = setInterval(fetchActiveBoards, 12000);
+    return () => clearInterval(interval);
+  }, [user, navigate, token, isMasterAdmin, fetchStudents, fetchTeachers]);
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
     try {
-      await axios.post(`${API_URL}/api/admin/students`, 
+      await axios.post(`${API_URL}/api/admin/students`,
         { username: newUsername, password: newPassword, group_name: newGroupName },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -102,7 +109,7 @@ const AdminDashboard = () => {
     setError('');
     setSuccess('');
     try {
-      await axios.post(`${API_URL}/api/admin/register-teacher`, 
+      await axios.post(`${API_URL}/api/admin/register-teacher`,
         { username: newTeacherName, teacher_code: newTeacherCode },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -136,7 +143,7 @@ const AdminDashboard = () => {
       alert('ยกเลิกการดำเนินการเรียบร้อยแล้ว');
       return;
     }
-    
+
     setIsClearing(true);
     setError('');
     setSuccess('');
@@ -162,7 +169,7 @@ const AdminDashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchStudents();
-    } catch (err) {
+    } catch {
       alert('Failed to delete student');
     }
   };
@@ -171,12 +178,12 @@ const AdminDashboard = () => {
     const newPass = prompt('Enter new password for this student:');
     if (!newPass) return;
     try {
-      await axios.put(`${API_URL}/api/admin/students/${id}/password`, 
+      await axios.put(`${API_URL}/api/admin/students/${id}/password`,
         { password: newPass },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       alert('Password reset successful');
-    } catch (err) {
+    } catch {
       alert('Failed to reset password');
     }
   };
@@ -203,17 +210,29 @@ const AdminDashboard = () => {
                 <GraduationCap size={15} /> คุณครู: {user?.username} {user?.teacher_code ? `(รหัส: ${user.teacher_code})` : ''}
               </span>
             )}
-            <button
-              onClick={() => {
-                const target = isMasterAdmin ? '/board/teacher_board' : `/board/teacher_board_${encodeURIComponent(user?.username || 'teacher')}`;
-                navigate(target);
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-sm font-medium"
-            >
-              {isMasterAdmin ? 'เข้าบอร์ดกลาง (Master Board)' : `เข้ากระดานสอนของคุณครู (${user?.username || 'Teacher'})`}
-            </button>
+            {isMasterAdmin ? (
+              <button
+                onClick={() => navigate('/board/teacher_board')}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-sm font-medium"
+              >
+                เข้าบอร์ดกลาง (Master Board)
+              </button>
+            ) : (
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) navigate(`/board/teacher_board_${encodeURIComponent(e.target.value)}`);
+                }}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-sm font-medium cursor-pointer"
+              >
+                <option value="">เข้ากระดานสอน (เลือกห้อง)</option>
+                {groupNames.map(g => (
+                  <option key={g} value={g} className="text-gray-900">{g}</option>
+                ))}
+              </select>
+            )}
           </div>
-          <button 
+          <button
             onClick={handleLogout}
             className="flex items-center gap-2 text-gray-600 hover:text-red-600 transition-colors px-3 py-2 rounded-lg hover:bg-red-50"
           >
@@ -227,10 +246,10 @@ const AdminDashboard = () => {
         {success && <div className="p-4 mb-6 text-sm text-green-700 bg-green-50 rounded-xl border border-green-200 shadow-sm">{success}</div>}
 
         <div className="grid md:grid-cols-3 gap-8">
-          
+
           {/* Left Column: Forms and System Actions */}
           <div className="md:col-span-1 space-y-8">
-            
+
             {/* Add Student Form */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
               <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
@@ -241,7 +260,7 @@ const AdminDashboard = () => {
                   นักเรียนที่เพิ่มจะอยู่ในห้องเรียนของคุณครู {user?.username} โดยตรง
                 </p>
               )}
-              
+
               <form onSubmit={handleAddStudent} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
@@ -290,7 +309,7 @@ const AdminDashboard = () => {
                 <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                   <UserPlus className="text-indigo-600" /> Add New Teacher
                 </h2>
-                
+
                 <form onSubmit={handleRegisterTeacher} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Teacher Name</label>
@@ -349,7 +368,7 @@ const AdminDashboard = () => {
 
           {/* Right Column: Student Groups & Teacher Management */}
           <div className="md:col-span-2 space-y-8">
-            
+
             {/* Master Admin: Teacher Management Table */}
             {isMasterAdmin && (
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
@@ -358,7 +377,7 @@ const AdminDashboard = () => {
                     <Users className="text-indigo-600" /> จัดการบัญชีคุณครู ({teachers.length})
                   </h2>
                 </div>
-                
+
                 {teachers.length === 0 ? (
                   <div className="py-6 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
                     ยังไม่มีบัญชีครูอื่นในระบบ
@@ -405,7 +424,7 @@ const AdminDashboard = () => {
               <h2 className="text-xl font-bold mb-6">
                 {isMasterAdmin ? `Student Groups (All Teachers - ${students.length} คน)` : `ห้องเรียนและนักเรียนของคุณครู ${user?.username} (${students.length} คน)`}
               </h2>
-              
+
               <div className="space-y-8">
                 {students.length === 0 ? (
                   <div className="py-8 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
@@ -423,7 +442,7 @@ const AdminDashboard = () => {
                     <div key={groupName} className="border border-gray-200 rounded-xl overflow-hidden">
                       <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
                         <div className="font-bold text-gray-700 flex items-center gap-2">
-                          {groupName} 
+                          {groupName}
                           <span className="text-sm font-normal text-gray-500">({groupStudents.length} students)</span>
                           {groupStudents.filter(s => activeBoards.includes(String(s.id))).length > 0 && (
                             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700 flex items-center gap-1">
@@ -502,7 +521,7 @@ const AdminDashboard = () => {
               </div>
             </div>
           </div>
-          
+
         </div>
       </main>
     </div>

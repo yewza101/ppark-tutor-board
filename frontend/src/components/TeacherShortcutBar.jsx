@@ -2,20 +2,19 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/useAuthStore';
-
-const API_URL = import.meta.env.VITE_API_URL || 'https://ppark-tutor-board-production.up.railway.app';
+import { API_URL } from '../config';
 
 const TeacherShortcutBar = ({ currentBoardId }) => {
   const { token, user } = useAuthStore();
   const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [activeBoards, setActiveBoards] = useState([]);
-  
-  if (user?.role !== 'admin') return null;
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
+    if (!isAdmin || !token) return;
     let isMounted = true;
-    
+
     const fetchData = async () => {
       try {
         const [studentsRes, activeRes] = await Promise.all([
@@ -38,7 +37,9 @@ const TeacherShortcutBar = ({ currentBoardId }) => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [token]);
+  }, [token, isAdmin]);
+
+  if (!isAdmin) return null;
 
   let currentGroup = 'General';
   if (currentBoardId.startsWith('teacher_board_')) {
@@ -87,7 +88,7 @@ const TeacherShortcutBar = ({ currentBoardId }) => {
                     }`}
                 >
                     <span className={`w-2 h-2 rounded-full ${isCurrent ? 'bg-white' : 'bg-green-500 animate-pulse'}`}></span>
-                    {student.name}
+                    {student.username}
                 </button>
             );
         })}

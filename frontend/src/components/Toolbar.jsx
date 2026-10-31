@@ -1,26 +1,26 @@
-import { 
-  Pencil, Eraser, Circle, Square, Minus, Triangle, 
+import {
+  Pencil, Eraser, Circle, Square, Minus, Triangle,
   ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon,
   Highlighter, Type, Download, UploadCloud, PenTool, MonitorPlay
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 
-const Toolbar = ({ 
-  currentTool, setCurrentTool, 
+const Toolbar = ({
+  currentTool, setCurrentTool,
   penMode, setPenMode,
-  brushColor, setBrushColor, 
-  brushSize, setBrushSize,
+  brushColor, setBrushColor,
+  setBrushSize,
   handleZoomIn, handleZoomOut, handleResetZoom,
   handleClear, handleUndo, handleRedo,
   canUndo, canRedo, handleUpload,
   bgTemplate, setBgTemplate, handleExport,
-  isPresentationMode, setIsPresentationMode, isAdmin
+  isPresentationMode, setIsPresentationMode, isAdmin, canClear = true
 }) => {
   const fileInputRef = useRef(null);
   const [presetSizes, setPresetSizes] = useState([2, 5, 12]);
   const [activeSizeIndex, setActiveSizeIndex] = useState(1);
   const [showSizeSlider, setShowSizeSlider] = useState(false);
-  
+
   const tools = [
     { id: 'select', icon: MousePointer2, label: 'Select' },
     { id: 'pan', icon: Hand, label: 'Pan (Move)' },
@@ -47,7 +47,7 @@ const Toolbar = ({
   return (
     <>
       {/* 1. Main Tools (Top Center) */}
-      <div 
+      <div
         className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none"
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
@@ -59,8 +59,8 @@ const Toolbar = ({
               key={tool.id}
               onClick={() => setCurrentTool(tool.id)}
               className={`p-2 rounded-xl transition-colors shrink-0 ${
-                currentTool === tool.id 
-                  ? 'bg-blue-100 text-blue-600' 
+                currentTool === tool.id
+                  ? 'bg-blue-100 text-blue-600'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
               title={tool.label}
@@ -73,7 +73,7 @@ const Toolbar = ({
 
       {/* 2. Properties: Colors & Sizes (Floating below Main Tools) */}
       {(needsColor || needsSize) && (
-        <div 
+        <div
           className="absolute top-20 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] flex flex-col items-center pointer-events-none"
           onPointerDown={(e) => e.stopPropagation()}
           onPointerMove={(e) => e.stopPropagation()}
@@ -95,10 +95,10 @@ const Toolbar = ({
                     />
                   ))}
                 </div>
-                
+
                 <div className="flex flex-col items-center gap-1 mx-1 shrink-0">
-                  <input 
-                    type="color" 
+                  <input
+                    type="color"
                     value={brushColor}
                     onChange={(e) => setBrushColor(e.target.value)}
                     className="w-7 h-7 rounded cursor-pointer border-0 p-0"
@@ -127,27 +127,27 @@ const Toolbar = ({
                     className={`w-8 h-8 flex justify-center items-center rounded-xl transition-colors shrink-0 ${activeSizeIndex === idx ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
                     title={activeSizeIndex === idx ? 'Adjust thickness' : 'Select thickness'}
                   >
-                    <div 
-                      className="rounded-full transition-all" 
-                      style={{ 
+                    <div
+                      className="rounded-full transition-all"
+                      style={{
                         backgroundColor: activeSizeIndex === idx ? '#2563eb' : '#4b5563',
-                        width: Math.max(2, Math.min(20, presetSizes[idx] * 0.8)), 
-                        height: Math.max(2, Math.min(20, presetSizes[idx] * 0.8)) 
-                      }} 
+                        width: Math.max(2, Math.min(20, presetSizes[idx] * 0.8)),
+                        height: Math.max(2, Math.min(20, presetSizes[idx] * 0.8))
+                      }}
                     />
                   </button>
                 ))}
               </div>
             )}
           </div>
-          
+
           {/* Size Slider Popup */}
           {showSizeSlider && needsSize && (
             <div className="mt-2 bg-white shadow-xl border border-gray-200 rounded-xl p-3 z-50 flex flex-col items-center gap-2 pointer-events-auto">
               <span className="text-xs text-gray-500 whitespace-nowrap font-medium">Thickness: {presetSizes[activeSizeIndex]}px</span>
-              <input 
-                type="range" 
-                min="1" 
+              <input
+                type="range"
+                min="1"
                 max={currentTool === 'eraser' ? "200" : "50"}
                 value={presetSizes[activeSizeIndex]}
                 onChange={(e) => {
@@ -165,7 +165,7 @@ const Toolbar = ({
       )}
 
       {/* 3. Left Actions: History & Zoom (Bottom Left) */}
-      <div 
+      <div
         className="absolute bottom-4 left-4 z-10 pointer-events-none"
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
@@ -181,28 +181,28 @@ const Toolbar = ({
           <button onClick={handleZoomOut} className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl" title="Zoom Out">
             <ZoomOut size={20} />
           </button>
-          
+
           <div className="h-px w-6 bg-gray-200 mx-auto my-1"></div>
-          
-          <button 
-            onClick={handleUndo} 
+
+          <button
+            onClick={handleUndo}
             disabled={!canUndo}
             className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl disabled:opacity-30 transition-colors"
             title="Undo"
           >
             <Undo size={20} />
           </button>
-          <button 
-            onClick={handleRedo} 
+          <button
+            onClick={handleRedo}
             disabled={!canRedo}
             className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl disabled:opacity-30 transition-colors"
             title="Redo"
           >
             <Redo size={20} />
           </button>
-          
+
           <div className="w-px h-6 bg-gray-200 mx-1"></div>
-          
+
           <button
             onClick={() => setPenMode(!penMode)}
             title={penMode ? "Pen Only Mode (ON)" : "Pen Only Mode (OFF)"}
@@ -214,7 +214,7 @@ const Toolbar = ({
       </div>
 
       {/* 4. Right Actions: System Tools (Bottom Right) */}
-      <div 
+      <div
         className="absolute bottom-4 right-4 z-10 pointer-events-none"
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
@@ -228,7 +228,7 @@ const Toolbar = ({
           >
             <ImageIcon size={20} />
           </button>
-          
+
           <button
             onClick={() => fileInputRef.current?.click()}
             title="Upload Image / PDF"
@@ -236,23 +236,23 @@ const Toolbar = ({
           >
             <UploadCloud size={20} />
           </button>
-          <input 
-            type="file" 
-            ref={fileInputRef} 
+          <input
+            type="file"
+            ref={fileInputRef}
             accept="image/*,application/pdf"
             onChange={(e) => {
               if (e.target.files && e.target.files[0]) {
                 handleUpload(e.target.files[0]);
                 e.target.value = ''; // Reset
               }
-            }} 
-            className="hidden" 
+            }}
+            className="hidden"
           />
 
           {isAdmin && (
             <div className="w-10 h-px bg-gray-200 my-1 mx-auto" />
           )}
-          
+
           {isAdmin && (
             <button
               onClick={() => setIsPresentationMode(!isPresentationMode)}
@@ -268,8 +268,8 @@ const Toolbar = ({
 
           <div className="w-10 h-px bg-gray-200 my-1 mx-auto" />
 
-          <select 
-              value={bgTemplate} 
+          <select
+              value={bgTemplate}
               onChange={(e) => setBgTemplate(e.target.value)}
               className="p-1 text-sm border-0 rounded-lg text-gray-700 bg-transparent hover:bg-gray-100 outline-none w-10 truncate appearance-none text-center cursor-pointer"
               title="Paper Background"
@@ -279,16 +279,18 @@ const Toolbar = ({
               <option value="grid">▦</option>
               <option value="dot">⁖</option>
           </select>
-          
+
           <div className="h-px w-6 bg-gray-200 mx-auto my-1"></div>
-          
+
           <button onClick={handleExport} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl" title="Export to PDF">
             <Download size={20} />
           </button>
-          
-          <button onClick={handleClear} className="p-2 text-red-600 hover:bg-red-50 rounded-xl" title="Clear Canvas">
-            <Trash2 size={20} />
-          </button>
+
+          {canClear && (
+            <button onClick={handleClear} className="p-2 text-red-600 hover:bg-red-50 rounded-xl" title="Clear Canvas">
+              <Trash2 size={20} />
+            </button>
+          )}
         </div>
       </div>
 

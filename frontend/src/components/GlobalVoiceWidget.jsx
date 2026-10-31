@@ -71,11 +71,6 @@ const GlobalVoiceWidget = () => {
 
   // Dynamically detect active group from route / state / params
   useEffect(() => {
-    if (user?.role !== 'admin') {
-      setActiveGroup(user?.group_name || 'General');
-      return;
-    }
-
     const queryGroup = searchParams.get('group');
     const stateGroup = location.state?.returnToGroup || location.state?.studentGroup;
     let detectedGroup = queryGroup || stateGroup;
@@ -86,13 +81,19 @@ const GlobalVoiceWidget = () => {
       } else if (location.pathname.startsWith('/board/teacher_board_')) {
         detectedGroup = decodeURIComponent(location.pathname.replace('/board/teacher_board_', ''));
       } else if (location.pathname === '/board/teacher_board') {
-        detectedGroup = 'General';
+        detectedGroup = user?.group_name || 'General';
+      } else {
+        detectedGroup = user?.group_name || 'General';
       }
     }
 
+    detectedGroup = (detectedGroup || 'General').trim();
+
     if (detectedGroup && detectedGroup !== activeGroup) {
       setActiveGroup(detectedGroup);
-      localStorage.setItem('ppark_active_voice_group', detectedGroup);
+      if (user?.role === 'admin') {
+        localStorage.setItem('ppark_active_voice_group', detectedGroup);
+      }
     }
   }, [location, user]);
 
@@ -251,14 +252,29 @@ const GlobalVoiceWidget = () => {
     }
 
     const startVoice = async () => {
+      if (localStreamRef.current) {
+        setupAudioMeter(localStreamRef.current);
+        if (socket && socket.connected) {
+          socket.emit('join-voice', { boardId: voiceRoomId, username: user?.username || 'Unknown' });
+        }
+        return;
+      }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
+        let stream = null;
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+              }
+            });
+          } catch (e) {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           }
-        });
+        }
+        if (!stream) throw new Error("No media stream");
         localStreamRef.current = stream;
         stream.getAudioTracks().forEach(track => { track.enabled = !isMuted; });
         setupAudioMeter(stream);
@@ -473,25 +489,82 @@ const GlobalVoiceWidget = () => {
     }
   };
 
-  // Immediate user click handler to unlock browser audio context
-  const handleToggleVoice = () => {
-    if (!isVoiceEnabled) {
-      try {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass) {
-          if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-            audioContextRef.current = new AudioContextClass();
-          }
-          if (audioContextRef.current.state === 'suspended') {
-            audioContextRef.current.resume().catch(() => {});
-          }
+  // Immediate user click handler to unlock browser audio context and request mic permissions within user gesture
+  const handleJoinVoice = async () => {
+    // 1. AudioContext unlock on direct user interaction
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+          audioContextRef.current = new AudioContextClass();
         }
-      } catch (e) {}
-      setIsVoiceEnabled(true);
+        if (audioContextRef.current.state === 'suspended') {
+          await audioContextRef.current.resume().catch(() => {});
+        }
+      }
+    } catch (e) {}
+
+    // 2. Request mic in user gesture
+    try {
+      let stream = null;
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
+        } catch (constraintErr) {
+          console.warn("Complex audio constraints failed, trying audio: true", constraintErr);
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+      } else {
+        const legacy = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+        if (legacy) {
+          stream = await new Promise((resolve, reject) => {
+            legacy.call(navigator, { audio: true }, resolve, reject);
+          });
+        }
+      }
+
+      if (!stream) throw new Error("No media stream obtained");
+
+      localStreamRef.current = stream;
+      stream.getAudioTracks().forEach(t => { t.enabled = true; });
+      setupAudioMeter(stream);
       setIsMuted(false);
-    } else {
+      setIsVoiceEnabled(true);
+
+      if (socket && socket.connected) {
+        socket.emit('join-voice', { boardId: voiceRoomId, username: user?.username || 'Unknown' });
+      }
+    } catch (err) {
+      console.error("Microphone access denied:", err);
+      alert("ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณาตรวจสอบสิทธิ์ Microphone ในการตั้งค่าเบราว์เซอร์");
       setIsVoiceEnabled(false);
       setIsMuted(false);
+    }
+  };
+
+  const handleLeaveVoice = () => {
+    cleanup();
+    setIsVoiceEnabled(false);
+    setIsMuted(false);
+  };
+
+  const handleToggleMute = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = !nextMuted;
+      });
+    }
+    if (nextMuted) setVolumeLevel(0);
+    if (socket && socket.connected) {
+      socket.emit('mic-status-changed', { boardId: voiceRoomId, isMuted: nextMuted });
     }
   };
 
@@ -694,7 +767,7 @@ const GlobalVoiceWidget = () => {
         {!isVoiceEnabled ? (
           <button
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={handleToggleVoice}
+            onClick={handleJoinVoice}
             className="flex items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 active:scale-95 text-white rounded-xl font-bold shadow-md hover:shadow-lg transition-all text-xs"
             title="แตะเพื่อเปิดไมค์พูดคุย"
           >
@@ -713,7 +786,7 @@ const GlobalVoiceWidget = () => {
             {/* Mic Toggle Button with dynamic reactive green glow */}
             <button
               onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => setIsMuted(!isMuted)}
+              onClick={handleToggleMute}
               className={`relative flex items-center justify-center w-10 h-10 rounded-full font-bold shadow-md active:scale-90 transition-all ${
                 isMuted
                   ? 'bg-rose-500 hover:bg-rose-600 text-white ring-4 ring-rose-100'
@@ -740,7 +813,7 @@ const GlobalVoiceWidget = () => {
             {/* Status Text & Audio Wave */}
             <div 
               onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => setIsMuted(!isMuted)}
+              onClick={handleToggleMute}
               className="flex flex-col justify-center cursor-pointer min-w-[100px]"
             >
               <div className="flex items-center gap-1.5">
@@ -777,10 +850,7 @@ const GlobalVoiceWidget = () => {
             {/* Leave Voice Button */}
             <button
               onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => {
-                setIsVoiceEnabled(false);
-                setIsMuted(false);
-              }}
+              onClick={handleLeaveVoice}
               className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
               title="ออกจากห้องคุยเสียง (วางสาย)"
             >

@@ -30,12 +30,19 @@ router.get('/:userId', async (req, res) => {
   let targetUserId = userIdParam;
   
   if (!isTeacherBoard) {
-    targetUserId = parseInt(userIdParam, 10);
+    if (userIdParam === req.user.username || String(userIdParam) === String(req.user.id)) {
+      targetUserId = req.user.id;
+    } else {
+      targetUserId = parseInt(userIdParam, 10);
+    }
   }
   
   // Student can only access their own board or any teacher board
-  if (req.user.role === 'student' && targetUserId !== req.user.id && !isTeacherBoard) {
-    return res.status(403).json({ message: 'Forbidden' });
+  if (req.user.role === 'student' && !isTeacherBoard) {
+    if (targetUserId !== req.user.id && userIdParam !== req.user.username && String(userIdParam) !== String(req.user.id)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    targetUserId = req.user.id;
   }
 
   try {

@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { io } from 'socket.io-client';
+import React, { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, PhoneOff, Users, GripVertical, ChevronDown } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import { API_URL } from '../config';
+import { createSocket } from '../socket';
 import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 
@@ -11,9 +11,14 @@ const safeSetPointerCapture = (target, pointerId) => {
     if (target && target.setPointerCapture) {
       target.setPointerCapture(pointerId);
     }
-  } catch (err) {}
+  } catch {}
 };
 
+// STUN alone cannot traverse symmetric NAT or most school firewalls: those peers
+// simply never connect. Set VITE_TURN_URL / VITE_TURN_USERNAME / VITE_TURN_CREDENTIAL
+// to add a relay. ponytail: env-configured single TURN entry; a credential endpoint
+// is only worth it if the static secret becomes a problem.
+const TURN_URL = import.meta.env.VITE_TURN_URL;
 const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -21,22 +26,27 @@ const ICE_CONFIG = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' }
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    ...(TURN_URL ? [{
+      urls: TURN_URL,
+      username: import.meta.env.VITE_TURN_USERNAME,
+      credential: import.meta.env.VITE_TURN_CREDENTIAL
+    }] : [])
   ]
 };
 
 const GlobalVoiceWidget = () => {
   const { user, token } = useAuthStore();
-  
+
   const [socket, setSocket] = useState(null);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [peers, setPeers] = useState({}); // { socketId: { username, stream, isMuted } }
   const [showParticipants, setShowParticipants] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0); // 0 to 100
-  const [widgetPos, setWidgetPos] = useState({ 
-    x: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 300) : 300, 
-    y: 80 
+  const [widgetPos, setWidgetPos] = useState({
+    x: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 300) : 300,
+    y: 80
   });
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
 
@@ -71,7 +81,9 @@ const GlobalVoiceWidget = () => {
 
   // Dynamically detect active group from route / state / params
   useEffect(() => {
-    const queryGroup = searchParams.get('group');
+    // Read the query string directly: `searchParams` is a fresh object every render,
+    // so depending on it would re-run this effect on every single render.
+    const queryGroup = new URLSearchParams(location.search).get('group');
     const stateGroup = location.state?.returnToGroup || location.state?.studentGroup;
     let detectedGroup = queryGroup || stateGroup;
 
@@ -95,14 +107,18 @@ const GlobalVoiceWidget = () => {
         localStorage.setItem('ppark_active_voice_group', detectedGroup);
       }
     }
-  }, [location, user]);
+  }, [location, user, activeGroup]);
 
   const voiceRoomId = `voice_group_${activeGroup}`;
   const activeVoiceRoomIdRef = useRef(voiceRoomId);
+  // Which room we have actually emitted join-voice for, so a re-render cannot
+  // re-join and trigger a fresh round of offers to everyone already in the call.
+  const joinedRoomRef = useRef(null);
 
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({});
   const pendingCandidatesRef = useRef({});
+  const disconnectTimers = useRef({});
 
   // Responsive boundary check for draggable widget
   useEffect(() => {
@@ -118,36 +134,40 @@ const GlobalVoiceWidget = () => {
 
   // Initialize Socket connection
   useEffect(() => {
-    if (!user) return;
-    const newSocket = io(API_URL);
+    if (!user || !token) return;
+    const newSocket = createSocket(token);
     setSocket(newSocket);
-    
+
     newSocket.on('connect', () => {
-      newSocket.emit('join-board', { boardId: voiceRoomId, role: user.role });
+      // Read the room from the ref: this handler also runs on reconnect, and a
+      // captured voiceRoomId would rejoin whichever room was active at mount.
+      newSocket.emit('join-board', { boardId: activeVoiceRoomIdRef.current, role: user.role });
     });
     return () => newSocket.disconnect();
-  }, [user]);
+  }, [user, token]);
 
   // Handle Voice Room switches
   useEffect(() => {
     if (!socket || !user) return;
-    
+
     if (activeVoiceRoomIdRef.current !== voiceRoomId) {
       if (isVoiceEnabled) {
         socket.emit('leave-voice', { boardId: activeVoiceRoomIdRef.current });
       }
       socket.emit('join-board', { boardId: voiceRoomId, role: user.role });
-      
+
       // Clean up previous room peer connections
       setPeers({});
       Object.values(peerConnectionsRef.current).forEach(pc => {
-        try { pc.close(); } catch (e) {}
+        try { pc.close(); } catch {}
       });
       peerConnectionsRef.current = {};
       pendingCandidatesRef.current = {};
-      
+
+      joinedRoomRef.current = null;
       if (isVoiceEnabled && localStreamRef.current) {
-        socket.emit('join-voice', { boardId: voiceRoomId, username: user?.username || 'Unknown' });
+        joinedRoomRef.current = voiceRoomId;
+        socket.emit('join-voice', { boardId: voiceRoomId, username: usernameRef.current });
       }
       activeVoiceRoomIdRef.current = voiceRoomId;
     }
@@ -183,7 +203,7 @@ const GlobalVoiceWidget = () => {
     if (peerConnectionsRef.current[targetSocketId]) {
       try {
         peerConnectionsRef.current[targetSocketId].close();
-      } catch (e) {}
+      } catch {}
       delete peerConnectionsRef.current[targetSocketId];
     }
 
@@ -206,34 +226,55 @@ const GlobalVoiceWidget = () => {
     };
 
     pc.ontrack = (event) => {
-      const remoteStream = (event.streams && event.streams[0]) 
-        ? event.streams[0] 
+      const remoteStream = (event.streams && event.streams[0])
+        ? event.streams[0]
         : new MediaStream([event.track]);
-      
+
       setPeers(prev => ({
         ...prev,
-        [targetSocketId]: { 
-          ...prev[targetSocketId], 
+        [targetSocketId]: {
+          ...prev[targetSocketId],
           username: targetUsername || prev[targetSocketId]?.username || 'User',
-          stream: remoteStream 
+          stream: remoteStream
         }
       }));
     };
 
+    // Only 'failed'/'closed' are terminal. 'disconnected' recovers on its own most
+    // of the time, and tearing the peer down there dropped recoverable audio.
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-        removePeer(targetSocketId);
+      if (pc.iceConnectionState === 'failed') {
+        try { pc.restartIce?.(); } catch { /* older Safari */ }
+        if (disconnectTimers.current[targetSocketId]) return;
+        disconnectTimers.current[targetSocketId] = setTimeout(() => {
+          delete disconnectTimers.current[targetSocketId];
+          if (peerConnectionsRef.current[targetSocketId] === pc &&
+              pc.iceConnectionState !== 'connected' &&
+              pc.iceConnectionState !== 'completed') {
+            removePeer(targetSocketId);
+          }
+        }, 8000);
+      } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        clearTimeout(disconnectTimers.current[targetSocketId]);
+        delete disconnectTimers.current[targetSocketId];
       }
     };
 
     return pc;
   };
 
+  const createPeerRef = useRef(null);
+  createPeerRef.current = createPeerConnection;
+  const usernameRef = useRef(user?.username);
+  usernameRef.current = user?.username || 'Unknown';
+
   const removePeer = (socketId) => {
+    clearTimeout(disconnectTimers.current[socketId]);
+    delete disconnectTimers.current[socketId];
     if (peerConnectionsRef.current[socketId]) {
       try {
         peerConnectionsRef.current[socketId].close();
-      } catch (e) {}
+      } catch {}
       delete peerConnectionsRef.current[socketId];
     }
     delete pendingCandidatesRef.current[socketId];
@@ -247,47 +288,23 @@ const GlobalVoiceWidget = () => {
   // WebRTC Signaling lifecycle
   useEffect(() => {
     if (!socket || !isVoiceEnabled) {
-      cleanup();
+      if (!isVoiceEnabled) joinedRoomRef.current = null;
       return;
     }
 
-    const startVoice = async () => {
-      if (localStreamRef.current) {
-        setupAudioMeter(localStreamRef.current);
-        if (socket && socket.connected) {
-          socket.emit('join-voice', { boardId: voiceRoomId, username: user?.username || 'Unknown' });
-        }
-        return;
+    // The mic is acquired in handleJoinVoice, inside the click gesture, because iOS
+    // Safari rejects getUserMedia outside one. This effect only wires up signalling;
+    // re-requesting the mic here would both break iOS and double-join the room.
+    if (!localStreamRef.current) {
+      setIsVoiceEnabled(false);
+      return;
+    }
+    if (joinedRoomRef.current !== voiceRoomId) {
+      joinedRoomRef.current = voiceRoomId;
+      if (socket.connected) {
+        socket.emit('join-voice', { boardId: voiceRoomId, username: usernameRef.current });
       }
-      try {
-        let stream = null;
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-              }
-            });
-          } catch (e) {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          }
-        }
-        if (!stream) throw new Error("No media stream");
-        localStreamRef.current = stream;
-        stream.getAudioTracks().forEach(track => { track.enabled = !isMuted; });
-        setupAudioMeter(stream);
-        
-        socket.emit('join-voice', { boardId: voiceRoomId, username: user?.username || 'Unknown' });
-      } catch (err) {
-        console.error("Microphone access denied:", err);
-        alert("ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณาอนุญาตสิทธิ์ Microphone ในการตั้งค่าเบราว์เซอร์");
-        setIsVoiceEnabled(false);
-      }
-    };
-
-    startVoice();
+    }
 
     // 1. Existing voice users in room (sent by server to new joiner)
     const handleExistingUsers = async (existingUsers) => {
@@ -296,16 +313,16 @@ const GlobalVoiceWidget = () => {
           ...prev,
           [u.socketId]: { ...prev[u.socketId], username: u.username, isMuted: u.isMuted }
         }));
-        
+
         // Initiate call to existing user
         try {
-          const pc = createPeerConnection(u.socketId, u.username);
+          const pc = createPeerRef.current(u.socketId, u.username);
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           socket.emit('webrtc-offer', {
             targetSocketId: u.socketId,
             offer,
-            callerUsername: user?.username || 'Unknown'
+            callerUsername: usernameRef.current
           });
         } catch (e) {
           console.error("Error creating offer to existing user:", e);
@@ -324,7 +341,7 @@ const GlobalVoiceWidget = () => {
 
     // 3. Incoming WebRTC Offer
     const handleOffer = async ({ offer, callerSocketId, callerUsername }) => {
-      const pc = createPeerConnection(callerSocketId, callerUsername);
+      const pc = createPeerRef.current(callerSocketId, callerUsername);
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         await drainPendingCandidates(callerSocketId, pc);
@@ -395,7 +412,9 @@ const GlobalVoiceWidget = () => {
     socket.on('admin-mute-user', handleAdminMute);
 
     return () => {
-      cleanup();
+      // Tear down peers only. The local mic stream belongs to the session, not to
+      // this effect: stopping it here is what killed the mic on a room switch.
+      teardownPeers();
       if (socket) {
         socket.off('existing-voice-users', handleExistingUsers);
         socket.off('user-joined-voice', handleUserJoined);
@@ -458,6 +477,19 @@ const GlobalVoiceWidget = () => {
     }
   };
 
+  // Close peer connections but keep the local microphone alive.
+  const teardownPeers = () => {
+    Object.values(disconnectTimers.current).forEach(clearTimeout);
+    disconnectTimers.current = {};
+    Object.values(peerConnectionsRef.current).forEach(pc => {
+      try { pc.close(); } catch { /* already closed */ }
+    });
+    peerConnectionsRef.current = {};
+    pendingCandidatesRef.current = {};
+    setPeers({});
+  };
+
+  // Full teardown: only when the user actually leaves the call or unmounts.
   const cleanup = () => {
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
@@ -468,22 +500,19 @@ const GlobalVoiceWidget = () => {
         if (audioContextRef.current.state !== 'closed') {
           audioContextRef.current.close().catch(() => {});
         }
-      } catch (e) {}
+      } catch { /* already closed */ }
       audioContextRef.current = null;
     }
+    analyserRef.current = null;
     setVolumeLevel(0);
 
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
     }
-    Object.values(peerConnectionsRef.current).forEach(pc => {
-      try { pc.close(); } catch (e) {}
-    });
-    peerConnectionsRef.current = {};
-    pendingCandidatesRef.current = {};
-    setPeers({});
-    
+    teardownPeers();
+    joinedRoomRef.current = null;
+
     if (socket) {
       socket.emit('leave-voice', { boardId: activeVoiceRoomIdRef.current });
     }
@@ -502,7 +531,7 @@ const GlobalVoiceWidget = () => {
           await audioContextRef.current.resume().catch(() => {});
         }
       }
-    } catch (e) {}
+    } catch {}
 
     // 2. Request mic in user gesture
     try {
@@ -538,7 +567,8 @@ const GlobalVoiceWidget = () => {
       setIsVoiceEnabled(true);
 
       if (socket && socket.connected) {
-        socket.emit('join-voice', { boardId: voiceRoomId, username: user?.username || 'Unknown' });
+        joinedRoomRef.current = voiceRoomId;
+        socket.emit('join-voice', { boardId: voiceRoomId, username: usernameRef.current });
       }
     } catch (err) {
       console.error("Microphone access denied:", err);
@@ -601,6 +631,20 @@ const GlobalVoiceWidget = () => {
     dragRef.current.isDragging = false;
   };
 
+  useEffect(() => () => {
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    Object.values(peerConnectionsRef.current).forEach(pc => {
+      try { pc.close(); } catch { /* already closed */ }
+    });
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close().catch(() => {});
+    }
+  }, []);
+
   if (!user || isReadonly) return null;
 
   const otherPeersCount = Object.keys(peers).length;
@@ -611,9 +655,9 @@ const GlobalVoiceWidget = () => {
       <div style={{ position: 'fixed', top: -10000, left: -10000, width: 1, height: 1, opacity: 0.01, pointerEvents: 'none' }}>
         {Object.entries(peers).map(([socketId, peer]) => (
           peer.stream && (
-            <audio 
+            <audio
               key={socketId}
-              autoPlay 
+              autoPlay
               playsInline
               ref={audio => {
                 if (audio && audio.srcObject !== peer.stream) {
@@ -637,7 +681,7 @@ const GlobalVoiceWidget = () => {
               <Users size={18} />
               <span>ผู้เข้าร่วมห้อง ({otherPeersCount + (isVoiceEnabled ? 1 : 0)})</span>
             </div>
-            <button 
+            <button
               onClick={() => setShowParticipants(false)}
               className="text-white hover:bg-white/20 p-1 rounded-lg transition-colors"
             >
@@ -686,7 +730,7 @@ const GlobalVoiceWidget = () => {
       )}
 
       {/* Floating Kid-Friendly Voice Widget */}
-      <div 
+      <div
         style={{ left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, touchAction: 'none' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -719,7 +763,7 @@ const GlobalVoiceWidget = () => {
 
           {/* Admin Group Switcher Dropdown */}
           {showGroupDropdown && user?.role === 'admin' && (
-            <div 
+            <div
               onPointerDown={(e) => e.stopPropagation()}
               className="absolute left-0 top-full mt-1.5 bg-white shadow-xl rounded-xl border border-gray-200 py-1 min-w-[130px] z-50 animate-in fade-in duration-100"
             >
@@ -793,11 +837,11 @@ const GlobalVoiceWidget = () => {
                   : 'bg-emerald-500 hover:bg-emerald-600 text-white ring-4 ring-emerald-100'
               }`}
               style={{
-                boxShadow: !isMuted && volumeLevel > 5 
-                  ? `0 0 0 ${3 + (volumeLevel / 100) * 10}px rgba(34, 197, 94, ${0.3 + (volumeLevel / 100) * 0.4}), 0 0 ${(volumeLevel / 100) * 20}px rgba(34, 197, 94, 0.7)` 
+                boxShadow: !isMuted && volumeLevel > 5
+                  ? `0 0 0 ${3 + (volumeLevel / 100) * 10}px rgba(34, 197, 94, ${0.3 + (volumeLevel / 100) * 0.4}), 0 0 ${(volumeLevel / 100) * 20}px rgba(34, 197, 94, 0.7)`
                   : undefined,
-                transform: !isMuted && volumeLevel > 5 
-                  ? `scale(${1 + Math.min(0.1, (volumeLevel / 100) * 0.1)})` 
+                transform: !isMuted && volumeLevel > 5
+                  ? `scale(${1 + Math.min(0.1, (volumeLevel / 100) * 0.1)})`
                   : undefined,
                 transition: 'box-shadow 0.08s ease-out, transform 0.08s ease-out, background-color 0.2s'
               }}
@@ -811,7 +855,7 @@ const GlobalVoiceWidget = () => {
             </button>
 
             {/* Status Text & Audio Wave */}
-            <div 
+            <div
               onPointerDown={(e) => e.stopPropagation()}
               onClick={handleToggleMute}
               className="flex flex-col justify-center cursor-pointer min-w-[100px]"
@@ -824,22 +868,22 @@ const GlobalVoiceWidget = () => {
                 {/* Real-time Green Volume Wave Bars */}
                 {!isMuted && (
                   <div className="flex items-end gap-0.5 h-3 ml-0.5">
-                    <span 
+                    <span
                       className="w-1 bg-emerald-500 rounded-full transition-all duration-75"
                       style={{ height: `${Math.max(4, Math.min(12, 4 + (volumeLevel / 100) * 8))}px` }}
                     />
-                    <span 
+                    <span
                       className="w-1 bg-emerald-500 rounded-full transition-all duration-75"
                       style={{ height: `${Math.max(4, Math.min(14, 4 + (volumeLevel / 100) * 10))}px` }}
                     />
-                    <span 
+                    <span
                       className="w-1 bg-emerald-500 rounded-full transition-all duration-75"
                       style={{ height: `${Math.max(4, Math.min(10, 4 + (volumeLevel / 100) * 6))}px` }}
                     />
                   </div>
                 )}
               </div>
-              
+
               <span className={`text-[10px] ${isMuted ? 'text-rose-500 font-medium' : (volumeLevel > 8 ? 'text-emerald-600 font-bold animate-pulse' : 'text-gray-400')}`}>
                 {isMuted ? 'แตะเพื่อเปิดไมค์' : (volumeLevel > 8 ? 'กำลังพูด (เสียงเข้า)' : (otherPeersCount > 0 ? `คุยอยู่กับ ${otherPeersCount} คน` : 'กำลังรอเพื่อนเข้าห้อง'))}
               </span>

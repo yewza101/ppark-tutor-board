@@ -80,8 +80,16 @@ const MiniBoard = ({ student, token, isOnline }) => {
     });
 
     socket.on('draw-progress', (data) => {
+      if (!data) return;
       if (data.path === null) {
         delete remotePaths.current[data.socketId];
+      } else if (data.append && remotePaths.current[data.socketId]?.id === data.path.id) {
+        const existing = remotePaths.current[data.socketId];
+        remotePaths.current[data.socketId] = {
+          ...existing,
+          points: [...(existing.points || []), ...(data.path.points || [])],
+          path2d: null
+        };
       } else {
         remotePaths.current[data.socketId] = data.path;
       }

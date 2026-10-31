@@ -680,6 +680,9 @@ const Board = () => {
 
   const remotePaths = useRef({});
   const lastEmitTime = useRef(0);
+  // How much of the in-progress stroke the other clients already have.
+  const sentStrokeIdRef = useRef(null);
+  const sentPointCountRef = useRef(0);
   const lastCursorEmitTime = useRef(0);
   const lastCursorPosRef = useRef({ x: 0, y: 0 });
   const lastEraserPos = useRef(null);
@@ -772,9 +775,19 @@ const Board = () => {
     });
 
     newSocket.on('draw-progress', (data) => {
+      if (!data) return;
       if (data.path === null) {
         delete remotePaths.current[data.socketId];
+      } else if (data.append && remotePaths.current[data.socketId]?.id === data.path.id) {
+        // Delta chunk: extend the stroke we are already drawing for this peer.
+        const existing = remotePaths.current[data.socketId];
+        remotePaths.current[data.socketId] = {
+          ...existing,
+          points: [...(existing.points || []), ...(data.path.points || [])],
+          path2d: null
+        };
       } else {
+        // First chunk, a shape, or we joined mid-stroke and missed the start.
         remotePaths.current[data.socketId] = data.path;
       }
       if (fullRedrawRef.current) fullRedrawRef.current();
@@ -2327,12 +2340,36 @@ const Board = () => {
 
     const shouldEmitDraw = now - lastEmitTime.current > 75; // ~13fps live stroke preview
     if (socket && socket.id && shouldEmitDraw && currentPath.current) {
-      socket.emit('draw-progress', {
-        boardId: studentId,
-        path: currentPath.current,
-        socketId: socket.id
-      });
-      lastEmitTime.current = now;
+      // Send only the points added since the last emit. This used to resend the
+      // whole accumulated path every 75ms, so a 600-point stroke went out as
+      // ~20,000 points -- the dominant source of egress during a lesson.
+      const live = currentPath.current;
+      const allPoints = Array.isArray(live.points) ? live.points : null;
+      const sentSoFar = sentPointCountRef.current;
+      const isFirstChunk = live.id !== sentStrokeIdRef.current;
+
+      // Shapes carry no point array and are tiny; send them whole.
+      // Always copy the slice. Handing out the live array by reference means any
+      // point appended before the payload is serialised would be sent twice.
+      const chunk = allPoints ? allPoints.slice(isFirstChunk ? 0 : sentSoFar) : null;
+      const payload = chunk ? { ...live, points: chunk } : live;
+
+      if (chunk && !isFirstChunk && chunk.length === 0) {
+        // nothing new to show
+      } else {
+        socket.emit('draw-progress', {
+          boardId: studentId,
+          path: payload,
+          socketId: socket.id,
+          append: Boolean(chunk) && !isFirstChunk
+        });
+        if (chunk) {
+          sentStrokeIdRef.current = live.id;
+          // Record what was actually sent, not what existed at emit time.
+          sentPointCountRef.current = isFirstChunk ? chunk.length : sentSoFar + chunk.length;
+        }
+        lastEmitTime.current = now;
+      }
     }
   };
 
@@ -2497,6 +2534,8 @@ const Board = () => {
     currentPath.current = null;
 
     // Clear the progress on other clients
+    sentStrokeIdRef.current = null;
+    sentPointCountRef.current = 0;
     if (socket && socket.id) {
       socket.emit('draw-progress', {
         boardId: studentId,

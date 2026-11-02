@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="PPark Tutor Board">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="0.55" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#4338ca"/>
+    </linearGradient>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9edff"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#4338ca"/>
+      <stop offset="0.6" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- app-icon squircle -->
+  <rect width="512" height="512" rx="114" fill="url(#bg)"/>
+
+  <!-- soft top-left sheen -->
+  <path d="M0 114A114 114 0 0 1 114 0h284C250 44 120 150 60 300 36 360 14 392 0 404Z" fill="#ffffff" opacity="0.10"/>
+
+  <!-- the board, tilted a touch so it reads as a physical thing -->
+  <g transform="rotate(-5 256 258)">
+    <rect x="98" y="140" width="316" height="236" rx="30" fill="#1e1b4b" opacity="0.20" transform="translate(0 12)"/>
+    <rect x="98" y="140" width="316" height="236" rx="30" fill="url(#board)"/>
+
+    <!-- a freehand stroke with real taper: thin in, heavy through the middle,
+         flicked out at the end. This is what the product actually does. -->
+    <path fill="url(#ink)" d="
+      M150 312
+      C 176 258, 208 222, 244 213
+      C 276 205, 300 223, 313 253
+      C 321 272, 331 280, 342 275
+      C 356 268, 366 246, 374 214
+      C 376 205, 385 201, 392 205
+      C 399 209, 402 216, 400 224
+      C 390 268, 372 300, 344 312
+      C 310 326, 280 302, 263 266
+      C 255 249, 246 244, 237 248
+      C 217 256, 192 290, 174 330
+      C 169 341, 158 344, 150 339
+      C 142 333, 142 322, 150 312
+      Z"/>
+
+    <!-- the dot of the flick, sitting clearly on the board -->
+    <circle cx="336" cy="186" r="15" fill="url(#ink)"/>
+  </g>
+</svg>

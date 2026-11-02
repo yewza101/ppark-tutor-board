@@ -1,10 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>frontend</title>
+
+    <title>PPark Tutor Board</title>
+    <meta name="description" content="กระดานไวท์บอร์ดสอนสดแบบเรียลไทม์ สำหรับครูและนักเรียน" />
+
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#4f46e5" />
+
+    <!-- Home-screen install on iPad. iOS ignores the manifest icons and will not
+         accept SVG here, so it needs its own square PNG; transparent corners
+         would render black. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="PPark" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- "default" keeps the page below the status bar. black-translucent would put
+         the board's top toolbar underneath it. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
     <div id="root"></div>

@@ -13,9 +13,13 @@ if (!JWT_SECRET) {
 // Master admin credentials come from env. Without them the master account is simply disabled.
 const MASTER_USERNAME = process.env.MASTER_ADMIN_USERNAME || 'adminpark';
 const MASTER_PASSWORD = process.env.MASTER_ADMIN_PASSWORD;
-const MASTER_CODE = process.env.MASTER_ADMIN_CODE;
+// The master account is one account, so by default it is one secret: whatever
+// MASTER_ADMIN_PASSWORD is also works in the Teacher Code field. Requiring two
+// separate values for the same login was just a way to get locked out of one of
+// the two routes. Set MASTER_ADMIN_CODE only if you want them to differ.
+const MASTER_CODE = process.env.MASTER_ADMIN_CODE || MASTER_PASSWORD;
 if (!MASTER_PASSWORD && !MASTER_CODE) {
-  console.warn('WARNING: neither MASTER_ADMIN_PASSWORD nor MASTER_ADMIN_CODE is set - the master admin account is disabled. Set them in backend/.env to manage teachers.');
+  console.warn('WARNING: MASTER_ADMIN_PASSWORD is not set - the master admin account is disabled, so nobody can register teachers or clear documents. Set it in backend/.env.');
 }
 
 const masterUser = () => ({

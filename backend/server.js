@@ -106,6 +106,21 @@ const mayWriteBoard = (socket, boardId) => {
   return Boolean(id) && socketRooms[socket.id] === id;
 };
 
+// Public health check. There was no unauthenticated endpoint that returns 200,
+// so a host's health check had nothing to probe and "which commit is actually
+// running?" could only be inferred from behaviour. Railway injects the git SHA.
+const STARTED_AT = Date.now();
+app.get('/healthz', (req, res) => {
+  res.json({
+    ok: true,
+    commit: (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RENDER_GIT_COMMIT || 'unknown').slice(0, 7),
+    branch: process.env.RAILWAY_GIT_BRANCH || process.env.RENDER_GIT_BRANCH || 'unknown',
+    uptimeSeconds: Math.round((Date.now() - STARTED_AT) / 1000),
+    boardsInMemory: Object.keys(boardStates).length,
+    studentsOnline: Object.keys(studentConnectionCount).filter(id => NUMERIC_ID.test(id)).length
+  });
+});
+
 // API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);

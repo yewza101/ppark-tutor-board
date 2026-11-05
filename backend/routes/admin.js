@@ -2,11 +2,10 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const supabase = require('../db/database');
-const { JWT_SECRET } = require('./auth');
+const { JWT_SECRET, MASTER_USERNAME } = require('./auth');
 const { clearAllBoardCache } = require('../boardCache');
 
 const router = express.Router();
-const MASTER_USERNAME = process.env.MASTER_ADMIN_USERNAME || 'adminpark';
 
 // Middleware to verify Admin
 const verifyAdmin = (req, res, next) => {
@@ -211,6 +210,51 @@ router.delete('/teachers/:id', requireMaster, async (req, res) => {
   }
 
   res.json({ message: 'Teacher deleted successfully' });
+});
+
+// Change the master admin's own password (and optionally its teacher code).
+// This is why the master account is a real `users` row rather than a pair of env
+// vars: an app cannot rewrite its own environment, so the only way to let the
+// owner rotate this themselves is to keep it in the database.
+router.put('/master-password', requireMaster, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Current and new password are required' });
+  }
+  if (String(newPassword).length < 8 || String(newPassword).length > 128) {
+    return res.status(400).json({ message: 'New password must be 8-128 characters' });
+  }
+
+  const { data: master } = await supabase
+    .from('users')
+    .select('*')
+    .eq('username', MASTER_USERNAME)
+    .maybeSingle();
+
+  if (!master || !master.password_hash) {
+    return res.status(404).json({ message: 'Master account not found' });
+  }
+
+  // Knowing the current password is required even though the caller already holds
+  // a master token, so a borrowed or forgotten-open session cannot lock the owner out.
+  const ok = await bcrypt.compare(currentPassword, master.password_hash);
+  if (!ok) {
+    return res.status(401).json({ message: 'Current password is incorrect' });
+  }
+
+  // Only the hash changes. The Teacher Code route checks against this same hash,
+  // so one password still covers both sign-in fields.
+  const { error } = await supabase
+    .from('users')
+    .update({ password_hash: await bcrypt.hash(newPassword, 10), teacher_code: null })
+    .eq('id', master.id);
+
+  if (error) {
+    return res.status(500).json({ message: 'Failed to update password' });
+  }
+
+  res.json({ message: 'Master password updated. Existing sign-ins stay valid until they expire.' });
 });
 
 // Master System Cleanup: Clear all board cache, canvas drawings, and uploaded documents

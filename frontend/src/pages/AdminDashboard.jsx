@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Trash2, UserPlus, KeyRound, ExternalLink, LogOut, ShieldAlert, Users, Database, AlertTriangle, GraduationCap } from 'lucide-react';
+import { Trash2, UserPlus, KeyRound, ExternalLink, LogOut, ShieldAlert, Users, Database, AlertTriangle, GraduationCap, Lock } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import { API_URL } from '../config';
 
@@ -20,6 +20,12 @@ const AdminDashboard = () => {
   const [success, setSuccess] = useState('');
   const [activeBoards, setActiveBoards] = useState([]);
   const [isClearing, setIsClearing] = useState(false);
+
+  // Master admin: change own password
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
 
   const { user, token, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -159,6 +165,37 @@ const AdminDashboard = () => {
       setError('เกิดข้อผิดพลาดในการล้างข้อมูล');
     } finally {
       setIsClearing(false);
+    }
+  };
+
+  const handleChangeMasterPassword = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (pwNew !== pwConfirm) {
+      setError('รหัสผ่านใหม่กับยืนยันรหัสผ่านไม่ตรงกัน');
+      return;
+    }
+    if (pwNew.length < 8) {
+      setError('รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัวอักษร');
+      return;
+    }
+
+    setPwSaving(true);
+    try {
+      const res = await axios.put(`${API_URL}/api/admin/master-password`,
+        { currentPassword: pwCurrent, newPassword: pwNew },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSuccess(res.data?.message || 'เปลี่ยนรหัสผ่านเรียบร้อยแล้ว');
+      setPwCurrent('');
+      setPwNew('');
+      setPwConfirm('');
+    } catch (err) {
+      setError(err.response?.data?.message || 'เปลี่ยนรหัสผ่านไม่สำเร็จ');
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -344,6 +381,54 @@ const AdminDashboard = () => {
             )}
 
             {/* Master Admin: Storage Cleanup */}
+            {isMasterAdmin && (
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h2 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2">
+                  <Lock className="text-indigo-600" size={20} /> เปลี่ยนรหัสผ่าน Master
+                </h2>
+                <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                  รหัสนี้ใช้ได้ทั้งช่อง <strong>Teacher Code</strong> และช่อง Username/Password
+                  (ชื่อผู้ใช้คือ <code className="px-1 bg-gray-100 rounded">{user?.username}</code>)
+                </p>
+                <form onSubmit={handleChangeMasterPassword} className="space-y-3">
+                  <input
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    placeholder="รหัสผ่านปัจจุบัน"
+                    value={pwCurrent}
+                    onChange={(e) => setPwCurrent(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 text-sm"
+                  />
+                  <input
+                    type="password"
+                    required
+                    autoComplete="new-password"
+                    placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)"
+                    value={pwNew}
+                    onChange={(e) => setPwNew(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 text-sm"
+                  />
+                  <input
+                    type="password"
+                    required
+                    autoComplete="new-password"
+                    placeholder="ยืนยันรหัสผ่านใหม่"
+                    value={pwConfirm}
+                    onChange={(e) => setPwConfirm(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 text-sm"
+                  />
+                  <button
+                    type="submit"
+                    disabled={pwSaving}
+                    className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium shadow-sm disabled:opacity-50 text-sm"
+                  >
+                    {pwSaving ? 'กำลังบันทึก...' : 'เปลี่ยนรหัสผ่าน'}
+                  </button>
+                </form>
+              </div>
+            )}
+
             {isMasterAdmin && (
               <div className="bg-gradient-to-br from-red-50 to-orange-50 p-6 rounded-2xl border border-red-200 shadow-sm">
                 <h2 className="text-lg font-bold text-red-900 mb-2 flex items-center gap-2">

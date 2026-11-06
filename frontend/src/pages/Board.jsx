@@ -1999,6 +1999,10 @@ const Board = () => {
 
             const prevZoom = zoomRef.current;
             const calculatedZoom = Math.max(0.1, Math.min(5, prevZoom * zoomDelta));
+            // A pinch fires many pointermove events per render, so the ref has to be
+            // advanced here. Reading it only at render time meant every event after
+            // the first scaled from a stale zoom and the view drifted off the pinch.
+            zoomRef.current = calculatedZoom;
             setZoom(calculatedZoom);
             setPan(prevPan => {
                 const nx = mouseX - (mouseX - (prevPan.x + dx)) * (calculatedZoom / prevZoom);
@@ -2553,24 +2557,29 @@ const Board = () => {
       // Zoom
       const zoomFactor = 0.1;
       const direction = e.deltaY > 0 ? -1 : 1;
-      const newZoom = Math.max(0.1, Math.min(5, zoom + direction * zoomFactor));
+      const prevZoom = zoomRef.current;
+      const newZoom = Math.max(0.1, Math.min(5, prevZoom + direction * zoomFactor));
+      zoomRef.current = newZoom;
 
       // Zoom towards mouse position
       const rect = canvasRef.current.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const newPanX = mouseX - (mouseX - pan.x) * (newZoom / zoom);
-      const newPanY = mouseY - (mouseY - pan.y) * (newZoom / zoom);
-
       setZoom(newZoom);
-      setPan(clampPan(newPanX, newPanY, newZoom));
+      // Via the updater so the anchor is computed against the latest pan, not the
+      // one from whichever render this handler was created in.
+      setPan(prevPan => clampPan(
+        mouseX - (mouseX - prevPan.x) * (newZoom / prevZoom),
+        mouseY - (mouseY - prevPan.y) * (newZoom / prevZoom),
+        newZoom
+      ));
     } else {
       // Pan
       setPan(prevPan => clampPan(
         prevPan.x - e.deltaX,
         prevPan.y - e.deltaY,
-        zoom
+        zoomRef.current
       ));
     }
   };
@@ -3214,9 +3223,15 @@ const Board = () => {
     }
   };
 
-  const handleZoomIn = () => setZoom(z => Math.min(5, z + 0.2));
-  const handleZoomOut = () => setZoom(z => Math.max(0.1, z - 0.2));
-  const handleResetZoom = () => { setZoom(1); setPan(clampPan(0, 0, 1)); };
+  const applyZoom = (next) => {
+    const clamped = Math.max(0.1, Math.min(5, next));
+    zoomRef.current = clamped;
+    setZoom(clamped);
+    return clamped;
+  };
+  const handleZoomIn = () => applyZoom(zoomRef.current + 0.2);
+  const handleZoomOut = () => applyZoom(zoomRef.current - 0.2);
+  const handleResetZoom = () => { applyZoom(1); setPan(clampPan(0, 0, 1)); };
 
   const trackStudentCursor = () => {
     // Find the cursor belonging to the student whose board this is

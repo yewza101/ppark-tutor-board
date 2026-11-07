@@ -427,27 +427,24 @@ const Board = () => {
       if (p.y + p.h > maxY) maxY = p.y + p.h;
     });
 
-    const padding = 100;
-    const maxYPan = -(minY - padding) * currentZoom;
-    const minYPan = viewportSize.h - (maxY + padding) * currentZoom;
-    const maxXPan = -(minX - padding) * currentZoom;
-    const minXPan = viewportSize.w - (maxX + padding) * currentZoom;
+    // This only exists to stop the worksheet being lost off-screen. The old rule
+    // demanded the page edges stay within 100px of the viewport, which the pinch
+    // anchor constantly violated: zooming in made the page wider than the screen,
+    // so the clamp dragged the view back every frame and the content slid out from
+    // under your fingers. Requiring an overlap instead leaves normal panning and
+    // zooming completely free, and only catches the case it is actually for.
+    const KEEP_VISIBLE = 120;
+    const minXPan = KEEP_VISIBLE - maxX * currentZoom;        // right edge still on screen
+    const maxXPan = viewportSize.w - KEEP_VISIBLE - minX * currentZoom; // left edge still on screen
+    const minYPan = KEEP_VISIBLE - maxY * currentZoom;
+    const maxYPan = viewportSize.h - KEEP_VISIBLE - minY * currentZoom;
 
-    let resX = nx;
-    let resY = ny;
+    const between = (v, a, b) => Math.max(Math.min(a, b), Math.min(Math.max(a, b), v));
 
-    if (minXPan > maxXPan) {
-        resX = (viewportSize.w - (maxX - minX) * currentZoom) / 2 - minX * currentZoom;
-    } else {
-        resX = Math.max(minXPan, Math.min(maxXPan, resX));
-    }
-
-    if (minYPan > maxYPan) {
-        resY = (viewportSize.h - (maxY - minY) * currentZoom) / 2 - minY * currentZoom;
-    } else {
-        resY = Math.max(minYPan, Math.min(maxYPan, resY));
-    }
-    return { x: resX, y: resY };
+    return {
+      x: between(nx, minXPan, maxXPan),
+      y: between(ny, minYPan, maxYPan)
+    };
   }, [zoom, viewportSize]);
   clampPanRef.current = clampPan;
 
@@ -1494,6 +1491,31 @@ const Board = () => {
         }
     });
   }, [elements, fullRedraw, redrawBase, redrawDraft]);
+
+  // A board holding worksheet pages used to load at pan (0,0) with the first page
+  // centred on x=0, so half of it sat off the left edge and the first touch
+  // snapped the view across by hundreds of pixels. Frame the pages once, when they
+  // first arrive, and then leave the view alone.
+  const hasFramedPagesRef = useRef(false);
+  useEffect(() => { hasFramedPagesRef.current = false; }, [studentId]);
+
+  useEffect(() => {
+    if (hasFramedPagesRef.current) return;
+    const pages = elements.filter(el => el.isPage);
+    if (pages.length === 0) return;
+
+    const minX = Math.min(...pages.map(p => p.x));
+    const maxX = Math.max(...pages.map(p => p.x + p.w));
+    const minY = Math.min(...pages.map(p => p.y));
+    if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY)) return;
+
+    hasFramedPagesRef.current = true;
+    const z = zoomRef.current;
+    setPan({
+      x: viewportSize.w / 2 - ((minX + maxX) / 2) * z,
+      y: 60 - minY * z
+    });
+  }, [elements, viewportSize]);
 
   // Handle window resize. Both canvases are backed by real device pixels and the
   // drawing code keeps working in CSS pixels via the dpr base transform.
@@ -2876,9 +2898,12 @@ const Board = () => {
                 // board again here duplicated them on the other clients.
                 elementsRef.current = [...elementsRef.current, ...newElements];
                 setElements(elementsRef.current);
-                // Reset pan and zoom to center the document
-                setZoom(1);
-                setPan(clampPan((window.innerWidth / 2) - 400, 50, 1));
+                // Centre the document explicitly now that clampPan only bounds
+                // the pan instead of pinning it.
+                const firstPage = newElements[0];
+                const centreX = firstPage ? firstPage.x + firstPage.w / 2 : 0;
+                applyZoom(1);
+                setPan(clampPan(window.innerWidth / 2 - centreX, 50, 1));
                 if (fullRedrawRef.current) fullRedrawRef.current();
             }
         } finally {

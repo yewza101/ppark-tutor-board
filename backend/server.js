@@ -12,7 +12,7 @@ const { authRouter, JWT_SECRET } = require('./routes/auth');
 const adminRouter = require('./routes/admin');
 const boardRouter = require('./routes/board');
 const supabase = require('./db/database');
-const { boardStates, getBoardState, saveBoardState, flushSave } = require('./boardCache');
+const { boardStates, getBoardState, saveBoardState, flushSave, probeTeacherBoards } = require('./boardCache');
 
 const app = express();
 const server = http.createServer(app);
@@ -110,9 +110,12 @@ const mayWriteBoard = (socket, boardId) => {
 // so a host's health check had nothing to probe and "which commit is actually
 // running?" could only be inferred from behaviour. Railway injects the git SHA.
 const STARTED_AT = Date.now();
-app.get('/healthz', (req, res) => {
+app.get('/healthz', async (req, res) => {
   res.json({
     ok: true,
+    // 'ok' means worksheets put on a teacher board survive the room emptying.
+    // Anything else means they are memory-only and will be lost again.
+    teacherBoards: await probeTeacherBoards().catch(e => 'error: ' + e.message),
     commit: (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RENDER_GIT_COMMIT || 'unknown').slice(0, 7),
     branch: process.env.RAILWAY_GIT_BRANCH || process.env.RENDER_GIT_BRANCH || 'unknown',
     uptimeSeconds: Math.round((Date.now() - STARTED_AT) / 1000),

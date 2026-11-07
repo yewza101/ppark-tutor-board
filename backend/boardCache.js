@@ -158,4 +158,13 @@ const clearAllBoardCache = () => {
     console.log('Cleared all in-memory board caches and save timeouts.');
 };
 
-module.exports = { boardStates, getBoardState, saveBoardState, flushSave, flushAllSaves, clearAllBoardCache };
+// Lets /healthz answer "are teacher boards actually being saved?" without having
+// to go and read the server logs or the database by hand.
+const probeTeacherBoards = async () => {
+    const { error } = await supabase.from(TEACHER_TABLE).select('board_id').limit(1);
+    if (!error) return 'ok';
+    if (noteTeacherTableMissing(error)) return 'missing-table';
+    return 'error: ' + (error.message || error.code || 'unknown');
+};
+
+module.exports = { boardStates, getBoardState, saveBoardState, flushSave, flushAllSaves, clearAllBoardCache, probeTeacherBoards };

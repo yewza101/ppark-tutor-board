@@ -275,6 +275,15 @@ router.post('/clear-all-documents', requireMaster, async (req, res) => {
       await supabase.from('boards').update({ canvas_data: '[]' }).neq('user_id', 0);
     }
 
+    // Teacher boards live in their own table because their ids are text.
+    const { error: tbError } = await supabase
+      .from('teacher_boards')
+      .delete()
+      .neq('board_id', '');
+    if (tbError) {
+      console.warn('Could not clear teacher_boards (table may not exist yet):', tbError.message || tbError);
+    }
+
     // 3. Clear all files in storage bucket 'board-assests'
     let deletedFilesCount = 0;
     try {

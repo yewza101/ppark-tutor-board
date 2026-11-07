@@ -106,6 +106,23 @@ const mayWriteBoard = (socket, boardId) => {
   return Boolean(id) && socketRooms[socket.id] === id;
 };
 
+// Teacher boards are readable by the whole class, but writable by students only
+// while the teacher has unlocked them. Default locked: a student scribbling over
+// a live lesson cannot be undone by the teacher.
+// ponytail: in-memory, so a restart re-locks every board. Fine - the teacher is
+// present when it matters; persist it alongside the board if that ever annoys.
+const studentWriteBoards = new Set();
+
+// Presence (cursor, viewport) only needs mayWriteBoard. Anything that changes what
+// is on the board goes through here as well, so the teacher-board lock is enforced
+// in one place instead of in every event handler.
+const mayDrawBoard = (socket, boardId) => {
+  const id = String(boardId ?? '');
+  if (!mayWriteBoard(socket, id)) return false;
+  if (isTeacherBoard(id) && !isAdminSocket(socket)) return studentWriteBoards.has(id);
+  return true;
+};
+
 // Public health check. There was no unauthenticated endpoint that returns 200,
 // so a host's health check had nothing to probe and "which commit is actually
 // running?" could only be inferred from behaviour. Railway injects the git SHA.
@@ -259,6 +276,10 @@ io.on('connection', (socket) => {
       socket.emit('force-presentation', presentingGroups.has(group));
     }
 
+    if (isTeacherBoard(boardId)) {
+      socket.emit('student-write-allowed', studentWriteBoards.has(boardId));
+    }
+
     // join-board is async, so anything the client emits immediately after it would
     // race the room check. Ack instead, and let the client speak once it is in.
     socket.emit('board-joined', { boardId });
@@ -269,17 +290,17 @@ io.on('connection', (socket) => {
   // Cache logic moved to boardCache.js
 
   // Relay-only events: cheap guard, no DB work.
-  const relay = (event) => socket.on(event, (data) => {
-    if (!data || !mayWriteBoard(socket, data.boardId)) return;
+  const relay = (event, may = mayDrawBoard) => socket.on(event, (data) => {
+    if (!data || !may(socket, data.boardId)) return;
     socket.to(`board_${data.boardId}`).emit(event, data);
   });
   relay('draw-progress');
-  relay('viewport-update');
+  relay('viewport-update', mayWriteBoard); // presence, not a change to the board
   relay('laser-fade');
 
   socket.on('draw-stroke', async (data) => {
     // data = { boardId, stroke, socketId }
-    if (!data || !data.stroke || !mayWriteBoard(socket, data.boardId)) return;
+    if (!data || !data.stroke || !mayDrawBoard(socket, data.boardId)) return;
     socket.to(`board_${data.boardId}`).emit('draw-stroke', data);
     try {
       const elements = await getBoardState(data.boardId);
@@ -299,7 +320,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('clear-canvas', async (boardId) => {
-    if (!mayWriteBoard(socket, boardId)) return;
+    if (!mayDrawBoard(socket, boardId)) return;
     socket.to(`board_${boardId}`).emit('clear-canvas');
     boardStates[boardId] = [];
     saveBoardState(boardId);
@@ -365,7 +386,7 @@ io.on('connection', (socket) => {
 
   socket.on('delete-element', async (data) => {
     // data = { boardId, elementId }
-    if (!data || !mayWriteBoard(socket, data.boardId)) return;
+    if (!data || !mayDrawBoard(socket, data.boardId)) return;
     socket.to(`board_${data.boardId}`).emit('delete-element', data);
     // Mutate the cached array in place: reassigning boardStates[id] here raced with a
     // concurrent getBoardState and silently dropped whichever operation finished first.
@@ -378,7 +399,7 @@ io.on('connection', (socket) => {
 
   socket.on('update-element', async (data) => {
     // data = { boardId, element }
-    if (!data || !data.element || !mayWriteBoard(socket, data.boardId)) return;
+    if (!data || !data.element || !mayDrawBoard(socket, data.boardId)) return;
     socket.to(`board_${data.boardId}`).emit('update-element', data);
     const elements = await getBoardState(data.boardId);
     const index = elements.findIndex(el => el && el.id === data.element.id);
@@ -391,7 +412,7 @@ io.on('connection', (socket) => {
   // Batched variant: dragging a 50-element selection used to emit 50 separate
   // update-element messages on every throttle tick.
   socket.on('update-elements', async (data) => {
-    if (!data || !Array.isArray(data.elements) || !mayWriteBoard(socket, data.boardId)) return;
+    if (!data || !Array.isArray(data.elements) || !mayDrawBoard(socket, data.boardId)) return;
     socket.to(`board_${data.boardId}`).emit('update-elements', data);
     const elements = await getBoardState(data.boardId);
     const byId = new Map(data.elements.filter(Boolean).map(el => [el.id, el]));
@@ -404,7 +425,7 @@ io.on('connection', (socket) => {
 
   socket.on('canvas-update', async (data) => {
     // Fallback for full sync if needed
-    if (!data || !Array.isArray(data.canvasState) || !mayWriteBoard(socket, data.boardId)) return;
+    if (!data || !Array.isArray(data.canvasState) || !mayDrawBoard(socket, data.boardId)) return;
     socket.to(`board_${data.boardId}`).emit('canvas-update', data.canvasState);
     boardStates[data.boardId] = data.canvasState.slice(0, MAX_ELEMENTS_PER_BOARD);
     saveBoardState(data.boardId);
@@ -442,6 +463,15 @@ io.on('connection', (socket) => {
       isTeacher: socket.user.role === 'admin',
       socketId: socket.id
     });
+  });
+
+  socket.on('allow-student-write', (allowed) => {
+    if (!isAdminSocket(socket)) return; // teacher-only: this unlocks the shared board
+    const boardId = socketRooms[socket.id];
+    if (!isTeacherBoard(boardId)) return;
+    if (allowed) studentWriteBoards.add(boardId);
+    else studentWriteBoards.delete(boardId);
+    io.to(`board_${boardId}`).emit('student-write-allowed', Boolean(allowed));
   });
 
   socket.on('force-presentation', (isActive) => {
@@ -546,8 +576,12 @@ io.on('connection', (socket) => {
       }
     }
 
-    // A teacher dropping out must not leave their class stuck in presentation mode.
+    // A teacher dropping out must not leave their class stuck in presentation mode,
+    // nor leave the teacher board unlocked with nobody able to lock it again.
     if (isAdminSocket(socket)) {
+      if (isTeacherBoard(boardId) && studentWriteBoards.delete(boardId)) {
+        io.to(`board_${boardId}`).emit('student-write-allowed', false);
+      }
       const group = groupOfBoard(boardId) || socket.user.group_name || 'General';
       if (presentingGroups.delete(group)) {
         for (const [sid, other] of io.sockets.sockets) {

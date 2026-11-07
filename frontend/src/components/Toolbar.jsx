@@ -14,7 +14,8 @@ const Toolbar = ({
   handleClear, handleUndo, handleRedo,
   canUndo, canRedo, handleUpload,
   bgTemplate, setBgTemplate, handleExport,
-  isPresentationMode, setIsPresentationMode, isAdmin, canClear = true
+  isPresentationMode, setIsPresentationMode, isAdmin, canClear = true,
+  viewOnly = false
 }) => {
   const fileInputRef = useRef(null);
   const [presetSizes, setPresetSizes] = useState([2, 5, 12]);
@@ -54,7 +55,7 @@ const Toolbar = ({
         onPointerUp={(e) => e.stopPropagation()}
       >
         <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-nowrap items-center gap-1 border border-gray-100 overflow-x-auto no-scrollbar w-full pointer-events-auto">
-          {tools.map(tool => (
+          {(viewOnly ? tools.filter(t => t.id === 'pan') : tools).map(tool => (
             <button
               key={tool.id}
               onClick={() => setCurrentTool(tool.id)}
@@ -186,7 +187,7 @@ const Toolbar = ({
 
           <button
             onClick={handleUndo}
-            disabled={!canUndo}
+            disabled={!canUndo || viewOnly}
             className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl disabled:opacity-30 transition-colors"
             title="Undo"
           >
@@ -194,7 +195,7 @@ const Toolbar = ({
           </button>
           <button
             onClick={handleRedo}
-            disabled={!canRedo}
+            disabled={!canRedo || viewOnly}
             className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl disabled:opacity-30 transition-colors"
             title="Redo"
           >
@@ -221,33 +222,38 @@ const Toolbar = ({
         onPointerUp={(e) => e.stopPropagation()}
       >
         <div className="bg-white/90 backdrop-blur shadow-lg rounded-2xl p-2 flex flex-col gap-1 border border-gray-100 pointer-events-auto">
-          <button
-            onClick={() => setCurrentTool('image')}
-            title="Select Image"
-            className={`p-2 rounded-xl transition-colors ${currentTool === 'image' ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
-          >
-            <ImageIcon size={20} />
-          </button>
+          {/* Both of these add something to the board, so a view-only board hides them. */}
+          {!viewOnly && (
+            <>
+              <button
+                onClick={() => setCurrentTool('image')}
+                title="Select Image"
+                className={`p-2 rounded-xl transition-colors ${currentTool === 'image' ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+              >
+                <ImageIcon size={20} />
+              </button>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            title="Upload Image / PDF"
-            className="p-2 text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
-          >
-            <UploadCloud size={20} />
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*,application/pdf"
-            onChange={(e) => {
-              if (e.target.files && e.target.files[0]) {
-                handleUpload(e.target.files[0]);
-                e.target.value = ''; // Reset
-              }
-            }}
-            className="hidden"
-          />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload Image / PDF"
+                className="p-2 text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                <UploadCloud size={20} />
+              </button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*,application/pdf"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleUpload(e.target.files[0]);
+                    e.target.value = ''; // Reset
+                  }
+                }}
+                className="hidden"
+              />
+            </>
+          )}
 
           {isAdmin && (
             <div className="w-10 h-px bg-gray-200 my-1 mx-auto" />

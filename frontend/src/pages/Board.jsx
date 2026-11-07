@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { ArrowLeft, Trash2, Lock, Unlock, Pencil } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import Toolbar from '../components/Toolbar';
 import TeacherShortcutBar from '../components/TeacherShortcutBar';
@@ -411,8 +411,16 @@ const Board = () => {
   const [bgTemplate, setBgTemplate] = useState('blank');
   const [viewportSize, setViewportSize] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [isPresentationMode, setIsPresentationMode] = useState(false);
+  // Pushed by the server: students may draw on a teacher board only while the
+  // teacher has unlocked it. The server enforces it as well; this just keeps the
+  // UI honest instead of letting strokes appear locally and then vanish.
+  const [studentWriteAllowed, setStudentWriteAllowed] = useState(false);
 
   const myRole = user?.role === 'admin' ? 'admin' : 'student';
+  const onTeacherBoard = studentId.startsWith('teacher_board');
+  // Everything that would change the board is off: the read-only PIP iframe, and a
+  // student on a locked teacher board. Pan and zoom stay on so they can follow along.
+  const viewOnly = isReadonly || (onTeacherBoard && myRole === 'student' && !studentWriteAllowed);
 
   const clampPanRef = useRef(null);
   const clampPan = useCallback((nx, ny, currentZoom = zoom) => {
@@ -594,6 +602,14 @@ const Board = () => {
   const [selectedElementIds, setSelectedElementIds] = useState([]);
   const activeLassoPathRef = useRef(null);
 
+  // Leaving a pen selected on a board that just locked looks broken: it draws
+  // nothing. Hand them the tool that still works.
+  useEffect(() => {
+    if (!viewOnly) return;
+    setCurrentTool('pan');
+    setSelectedElementIds([]);
+  }, [viewOnly]);
+
   const dragContext = useRef(null);
 
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -750,6 +766,14 @@ const Board = () => {
       });
     });
 
+    newSocket.on('student-write-allowed', (allowed) => {
+      const can = Boolean(allowed);
+      setStudentWriteAllowed(can);
+      if (user?.role !== 'admin' && !isReadonly) {
+        showToast(can ? 'ครูอนุญาตให้เขียนบนบอร์ดครูได้แล้ว ✏️' : 'บอร์ดครูถูกล็อก ดูได้อย่างเดียว 👀');
+      }
+    });
+
     newSocket.on('canvas-update', (updatedElements) => {
       if (!Array.isArray(updatedElements)) return;
       elementsRef.current = updatedElements;
@@ -898,7 +922,7 @@ const Board = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       newSocket.disconnect();
     };
-  }, [studentId, user, token, navigate]);
+  }, [studentId, user, token, navigate, isReadonly]);
 
   const drawElement = useCallback((ctx, el, currentZoom) => {
     if (!el || !el.type) return;
@@ -1628,8 +1652,10 @@ const Board = () => {
       activePointerType.current = e.pointerType;
     }
 
-    // Middle click or Space + Click for panning, or Pen Mode with touch
-    if (e.button === 1 || e.altKey || currentTool === 'pan' || (penMode && e.pointerType === 'touch')) {
+    // Middle click or Space + Click for panning, or Pen Mode with touch.
+    // viewOnly lands here too, so a locked board is pan-only: no drawing, no
+    // selecting, no dragging, without having to guard each of those branches.
+    if (viewOnly || e.button === 1 || e.altKey || currentTool === 'pan' || (penMode && e.pointerType === 'touch')) {
       setIsPanning(true);
       startPoint.current = { x: e.clientX, y: e.clientY };
       safeSetPointerCapture(e.target, e.pointerId);
@@ -3160,7 +3186,7 @@ const Board = () => {
 
   // Per-User Undo: only undoes the last element created by the current user
   const handleUndo = () => {
-    if (isReadonly) return;
+    if (viewOnly) return;
     const myAuthorId = user?.username || String(user?.id) || 'me';
 
     // Find the last element created by this user
@@ -3200,7 +3226,7 @@ const Board = () => {
 
   // Per-User Redo: only redoes the last element undone by the current user
   const handleRedo = () => {
-    if (isReadonly) return;
+    if (viewOnly) return;
     if (myRedoStack.length === 0) {
       showToast('ไม่มีสิ่งที่จะทำซ้ำ');
       return;
@@ -3226,7 +3252,7 @@ const Board = () => {
   handleRedoRef.current = handleRedo;
 
   const handleClear = () => {
-    if (isReadonly) return;
+    if (viewOnly) return;
     // Students may only clear their own board, never the shared teacher board.
     if (user?.role !== 'admin' && String(user?.id) !== studentId) {
       showToast('ล้างได้เฉพาะกระดานของตัวเองครับ');
@@ -3597,6 +3623,28 @@ const Board = () => {
                   <ArrowLeft size={18} /> <span className="hidden 2xl:inline">Monitor</span>
                 </button>
               )}
+              {onTeacherBoard && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const next = !studentWriteAllowed;
+                    socket?.emit('allow-student-write', next);
+                    showToast(next ? 'นักเรียนเขียนบนบอร์ดนี้ได้แล้ว ✏️' : 'ล็อกบอร์ดแล้ว นักเรียนดูได้อย่างเดียว 🔒');
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 backdrop-blur shadow-lg border rounded-2xl font-medium transition-colors text-xs md:text-sm ${
+                    studentWriteAllowed
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                      : 'bg-white/90 text-gray-700 border-gray-100 hover:bg-gray-50'
+                  }`}
+                  title={studentWriteAllowed ? 'ปิดสิทธิ์เขียนของนักเรียน (Lock)' : 'อนุญาตให้นักเรียนเขียนบนบอร์ดครู (Unlock)'}
+                >
+                  {studentWriteAllowed ? <Unlock size={18} /> : <Lock size={18} />}
+                  <span className="hidden 2xl:inline">
+                    {studentWriteAllowed ? 'นักเรียนเขียนได้' : 'นักเรียนดูอย่างเดียว'}
+                  </span>
+                </button>
+              )}
+
               <button
                 onClick={trackStudentCursor}
                 className="flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 bg-indigo-50/90 backdrop-blur shadow-lg border border-indigo-100 rounded-2xl text-indigo-700 hover:bg-indigo-100 font-medium transition-colors text-xs md:text-sm"
@@ -3630,6 +3678,20 @@ const Board = () => {
                   {studentId.startsWith('teacher_board') ? 'กระดานส่วนตัว' : 'บอร์ดครู'}
                 </span>
               </button>
+
+              {onTeacherBoard && (
+                <span
+                  className={`flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 backdrop-blur shadow-lg border rounded-2xl font-medium text-xs md:text-sm ${
+                    studentWriteAllowed
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}
+                  title={studentWriteAllowed ? 'ครูอนุญาตให้เขียนได้' : 'รอครูอนุญาตให้เขียน'}
+                >
+                  {studentWriteAllowed ? <Pencil size={16} /> : <Lock size={16} />}
+                  <span>{studentWriteAllowed ? 'เขียนได้' : 'ดูอย่างเดียว'}</span>
+                </span>
+              )}
 
               <button
                 onClick={(e) => {
@@ -3740,7 +3802,8 @@ const Board = () => {
           handleExport={handleExport}
           isPresentationMode={isPresentationMode} setIsPresentationMode={setIsPresentationMode}
           isAdmin={user?.role === 'admin'}
-          canClear={user?.role === 'admin' || String(user?.id) === studentId}
+          canClear={!viewOnly && (user?.role === 'admin' || String(user?.id) === studentId)}
+          viewOnly={viewOnly}
         />
       )}
 
@@ -3775,6 +3838,7 @@ const Board = () => {
           onWheel={onWheel}
           onContextMenu={(e) => {
              e.preventDefault();
+             if (viewOnly) return; // paste/duplicate/delete all hang off this menu
              const rect = canvasRef.current.getBoundingClientRect();
              const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 

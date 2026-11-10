@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, PhoneOff, Users, GripVertical, ChevronDown } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Users, GripVertical, ChevronDown, Minimize2 } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import { API_URL } from '../config';
 import { createSocket } from '../socket';
@@ -44,11 +44,18 @@ const GlobalVoiceWidget = () => {
   const [peers, setPeers] = useState({}); // { socketId: { username, stream, isMuted } }
   const [showParticipants, setShowParticipants] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0); // 0 to 100
+  // Starts as a small floating mic and only opens the full panel when tapped: the
+  // panel sat over the top-right of the board and got in the way of writing.
+  const [expanded, setExpanded] = useState(false);
   const [widgetPos, setWidgetPos] = useState({
-    x: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 300) : 300,
+    x: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 72) : 300,
     y: 80
   });
-  const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+  const dragRef = useRef({ isDragging: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+  // The stored position is the bubble's. The wider panel is pulled back on screen.
+  const widgetLeft = () => expanded
+    ? Math.max(8, Math.min(widgetPos.x, window.innerWidth - 300))
+    : widgetPos.x;
 
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
@@ -124,7 +131,7 @@ const GlobalVoiceWidget = () => {
   useEffect(() => {
     const handleResize = () => {
       setWidgetPos(prev => ({
-        x: Math.min(prev.x, window.innerWidth - 300),
+        x: Math.min(prev.x, window.innerWidth - 56),
         y: Math.min(prev.y, window.innerHeight - 100)
       }));
     };
@@ -609,9 +616,10 @@ const GlobalVoiceWidget = () => {
     if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
     dragRef.current = {
       isDragging: true,
+      moved: false,
       startX: e.clientX,
       startY: e.clientY,
-      origX: widgetPos.x,
+      origX: widgetLeft(),
       origY: widgetPos.y
     };
     safeSetPointerCapture(e.currentTarget, e.pointerId);
@@ -621,14 +629,23 @@ const GlobalVoiceWidget = () => {
     if (!dragRef.current.isDragging) return;
     const dx = e.clientX - dragRef.current.startX;
     const dy = e.clientY - dragRef.current.startY;
+    if (Math.hypot(dx, dy) > 5) dragRef.current.moved = true;
     setWidgetPos({
-      x: Math.max(8, Math.min(window.innerWidth - 280, dragRef.current.origX + dx)),
+      x: Math.max(8, Math.min(window.innerWidth - (expanded ? 280 : 56), dragRef.current.origX + dx)),
       y: Math.max(8, Math.min(window.innerHeight - 80, dragRef.current.origY + dy))
     });
   };
 
+  // Returns true when the pointer went down and up without dragging, i.e. a tap.
   const handlePointerUp = () => {
+    const wasTap = dragRef.current.isDragging && !dragRef.current.moved;
     dragRef.current.isDragging = false;
+    return wasTap;
+  };
+
+  const collapse = () => {
+    setExpanded(false);
+    setShowGroupDropdown(false);
   };
 
   useEffect(() => () => {
@@ -648,6 +665,10 @@ const GlobalVoiceWidget = () => {
   if (!user || isReadonly) return null;
 
   const otherPeersCount = Object.keys(peers).length;
+  const isSpeaking = isVoiceEnabled && !isMuted && volumeLevel > 5;
+  const speakingGlow = isSpeaking
+    ? `0 0 0 ${3 + (volumeLevel / 100) * 10}px rgba(34, 197, 94, ${0.3 + (volumeLevel / 100) * 0.4}), 0 0 ${(volumeLevel / 100) * 20}px rgba(34, 197, 94, 0.7)`
+    : undefined;
 
   return (
     <>
@@ -729,9 +750,37 @@ const GlobalVoiceWidget = () => {
         </div>
       )}
 
-      {/* Floating Kid-Friendly Voice Widget */}
+      {/* Collapsed: one floating mic that shows the call state at a glance. */}
+      {!expanded ? (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="เปิดแผงคุยเสียง"
+          title={!isVoiceEnabled ? 'แตะเพื่อเปิดแผงคุยเสียง' : (isMuted ? 'ปิดไมค์อยู่ — แตะเพื่อเปิดแผง' : 'เปิดไมค์อยู่ — แตะเพื่อเปิดแผง')}
+          style={{ left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, touchAction: 'none', boxShadow: speakingGlow }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={() => { if (handlePointerUp()) setExpanded(true); }}
+          onPointerCancel={handlePointerUp}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(true); }
+          }}
+          className={`fixed z-[9998] w-11 h-11 rounded-full flex items-center justify-center text-white shadow-xl ring-4 select-none cursor-pointer transition-colors ${
+            !isVoiceEnabled
+              ? 'bg-indigo-600 ring-indigo-100'
+              : (isMuted ? 'bg-rose-500 ring-rose-100' : 'bg-emerald-500 ring-emerald-100')
+          }`}
+        >
+          {isVoiceEnabled && isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+          {otherPeersCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-indigo-700 text-[10px] font-bold flex items-center justify-center shadow border border-indigo-100">
+              {otherPeersCount}
+            </span>
+          )}
+        </div>
+      ) : (
       <div
-        style={{ left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, touchAction: 'none' }}
+        style={{ left: `${widgetLeft()}px`, top: `${widgetPos.y}px`, touchAction: 'none' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -837,10 +886,8 @@ const GlobalVoiceWidget = () => {
                   : 'bg-emerald-500 hover:bg-emerald-600 text-white ring-4 ring-emerald-100'
               }`}
               style={{
-                boxShadow: !isMuted && volumeLevel > 5
-                  ? `0 0 0 ${3 + (volumeLevel / 100) * 10}px rgba(34, 197, 94, ${0.3 + (volumeLevel / 100) * 0.4}), 0 0 ${(volumeLevel / 100) * 20}px rgba(34, 197, 94, 0.7)`
-                  : undefined,
-                transform: !isMuted && volumeLevel > 5
+                boxShadow: speakingGlow,
+                transform: isSpeaking
                   ? `scale(${1 + Math.min(0.1, (volumeLevel / 100) * 0.1)})`
                   : undefined,
                 transition: 'box-shadow 0.08s ease-out, transform 0.08s ease-out, background-color 0.2s'
@@ -902,7 +949,18 @@ const GlobalVoiceWidget = () => {
             </button>
           </div>
         )}
+
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={collapse}
+          className="ml-1 p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+          title="ย่อเป็นไอคอน"
+          aria-label="ย่อแผงคุยเสียง"
+        >
+          <Minimize2 size={16} />
+        </button>
       </div>
+      )}
     </>
   );
 };

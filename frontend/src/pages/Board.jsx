@@ -668,7 +668,7 @@ const Board = () => {
   const activePointers = useRef(new Map());
   const fadingLasersRef = useRef([]);
   const animationFrameRef = useRef(null);
-  const twoFingerRef = useRef({ downTime: 0, moved: false });
+  const twoFingerRef = useRef({ downTime: 0, moved: false, startDist: 0, startCenter: null, lastTapTime: 0 });
   const lastPinchDist = useRef(null);
   const lastPinchCenter = useRef(null);
 
@@ -1640,6 +1640,8 @@ const Board = () => {
 
         twoFingerRef.current.downTime = Date.now();
         twoFingerRef.current.moved = false;
+        twoFingerRef.current.startDist = lastPinchDist.current;
+        twoFingerRef.current.startCenter = lastPinchCenter.current;
         return;
       }
 
@@ -2030,12 +2032,17 @@ const Board = () => {
 
         if (isReadonly) return;
 
+        // Measured from where the fingers landed. It used to compare against the
+        // previous event, and a pinch never moves 40px between two events, so every
+        // quick pinch looked like a tap and undid the last stroke.
+        const tf = twoFingerRef.current;
+        if (tf.startCenter && (
+            Math.abs(currentDist - tf.startDist) > 20 ||
+            Math.hypot(currentCenter.x - tf.startCenter.x, currentCenter.y - tf.startCenter.y) > 20)) {
+            tf.moved = true;
+        }
+
         if (lastPinchDist.current && lastPinchCenter.current) {
-            if (Math.abs(currentDist - lastPinchDist.current) > 40 ||
-                Math.abs(currentCenter.x - lastPinchCenter.current.x) > 40 ||
-                Math.abs(currentCenter.y - lastPinchCenter.current.y) > 40) {
-                twoFingerRef.current.moved = true;
-            }
             const zoomDelta = currentDist / lastPinchDist.current;
 
             const dx = currentCenter.x - lastPinchCenter.current.x;
@@ -2438,9 +2445,17 @@ const Board = () => {
 
     const touchPointersAfter = Array.from(activePointers.current.values()).filter(p => p.type === 'touch');
     if (wasTwoFingers && touchPointersAfter.length === 1) {
-        if (!twoFingerRef.current.moved && twoFingerRef.current.downTime && (Date.now() - twoFingerRef.current.downTime < 700)) {
-            twoFingerRef.current.downTime = 0;
+        const tf = twoFingerRef.current;
+        const now = Date.now();
+        const isTap = !tf.moved && tf.downTime && (now - tf.downTime < 400);
+        tf.downTime = 0;
+        // Undo needs a two-finger DOUBLE tap. A single tap was too easy to hit by
+        // accident at the start or end of a zoom.
+        if (isTap && now - tf.lastTapTime < 450) {
+            tf.lastTapTime = 0;
             handleUndo();
+        } else {
+            tf.lastTapTime = isTap ? now : 0;
         }
     }
 

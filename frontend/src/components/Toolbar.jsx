@@ -3,7 +3,7 @@ import {
   ZoomIn, ZoomOut, Maximize, Undo, Redo, Trash2, Hand, Wand2, Scissors, MousePointer2, Image as ImageIcon,
   Highlighter, Type, Download, UploadCloud, PenTool, MonitorPlay
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const Toolbar = ({
   currentTool, setCurrentTool,
@@ -18,8 +18,20 @@ const Toolbar = ({
   viewOnly = false
 }) => {
   const fileInputRef = useRef(null);
-  const [presetSizes, setPresetSizes] = useState([2, 5, 12]);
-  const [activeSizeIndex, setActiveSizeIndex] = useState(1);
+  // The highlighter keeps its own sizes. Sharing the pen's meant a fine pen also
+  // gave a fine highlighter. Highlighter strokes render at max(14, size * 2.5).
+  const sizeGroup = currentTool === 'highlighter' ? 'highlighter' : 'pen';
+  const [sizes, setSizes] = useState({
+    pen: { presets: [2, 5, 12], active: 1 },
+    highlighter: { presets: [5, 8, 12], active: 1 }
+  });
+  const { presets: presetSizes, active: activeSizeIndex } = sizes[sizeGroup];
+  const updateSizes = (patch) => setSizes(s => ({ ...s, [sizeGroup]: { ...s[sizeGroup], ...patch } }));
+
+  // The board draws with one brushSize, so follow whichever group is in use.
+  useEffect(() => {
+    setBrushSize(presetSizes[activeSizeIndex]);
+  }, [presetSizes, activeSizeIndex, setBrushSize]);
   const [showSizeSlider, setShowSizeSlider] = useState(false);
 
   const tools = [
@@ -120,8 +132,7 @@ const Toolbar = ({
                       if (activeSizeIndex === idx) {
                         setShowSizeSlider(!showSizeSlider);
                       } else {
-                        setActiveSizeIndex(idx);
-                        setBrushSize(presetSizes[idx]);
+                        updateSizes({ active: idx });
                         setShowSizeSlider(false);
                       }
                     }}
@@ -152,11 +163,9 @@ const Toolbar = ({
                 max={currentTool === 'eraser' ? "200" : "50"}
                 value={presetSizes[activeSizeIndex]}
                 onChange={(e) => {
-                  const newSize = parseInt(e.target.value);
                   const newPresets = [...presetSizes];
-                  newPresets[activeSizeIndex] = newSize;
-                  setPresetSizes(newPresets);
-                  setBrushSize(newSize);
+                  newPresets[activeSizeIndex] = parseInt(e.target.value);
+                  updateSizes({ presets: newPresets });
                 }}
                 className="w-32 accent-blue-600"
               />

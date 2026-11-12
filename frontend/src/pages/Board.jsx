@@ -29,6 +29,41 @@ const getSvgPathFromStroke = (stroke) => {
   return d.join(' ');
 };
 
+// A touch that lands this soon after the pen was on the glass is the writing hand
+// settling, not a finger asking to pan or draw.
+const PALM_GRACE_MS = 500;
+
+// Freehand points closer together than this (in screen px) add nothing but bytes,
+// and at 240 samples a second they are mostly sensor noise.
+const MIN_POINT_GAP_PX = 1.5;
+
+// A stylus reports real pressure; a mouse or finger reports a constant.
+const hasRealPressure = (points) =>
+  points.some(p => p && p.pressure > 0 && p.pressure !== 0.5 && p.pressure !== 1);
+
+// How a freehand stroke becomes an outline. Width used to be guessed from speed
+// alone at thinning 0.5, which swings between half and one and a half times the
+// chosen size within a single word and reads as a wobbly line.
+// ponytail: these numbers are reasoned, not measured on a real Pencil. If pen lines
+// come out too thin or too flat on an iPad, thinning and the sqrt curve are the knobs.
+const freehandOutline = (points, size, complete) => {
+  const real = hasRealPressure(points);
+  return getStroke(
+    // sqrt lifts the light pressures normal handwriting sits in (roughly 0.1-0.35)
+    // so an ordinary stroke lands near the chosen size instead of well under it.
+    real ? points.map(p => [p.x, p.y, Math.sqrt(p.pressure || 0)]) : points,
+    {
+      size,
+      thinning: real ? 0.25 : 0.3,
+      smoothing: 0.5,
+      streamline: 0.5,
+      simulatePressure: !real,
+      // Without this the outline stops short of where the pen actually lifted.
+      last: complete
+    }
+  );
+};
+
 const getPt = (p) => (!p ? null : Array.isArray(p) ? { x: p[0], y: p[1] } : { x: p.x, y: p.y });
 
 const distancePointToSegment = (p, v, w) => {
@@ -408,6 +443,10 @@ const Board = () => {
   const panRef = useRef({ x: 0, y: 0 });
   panRef.current = pan;
   const [isPanning, setIsPanning] = useState(false);
+  // The pointer handlers read this, not the state: a pan cancelled inside one
+  // handler has to be gone for the very next event, not after the next render.
+  const isPanningRef = useRef(false);
+  const setPanning = (value) => { isPanningRef.current = value; setIsPanning(value); };
   const [bgTemplate, setBgTemplate] = useState('blank');
   const [viewportSize, setViewportSize] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [isPresentationMode, setIsPresentationMode] = useState(false);
@@ -669,6 +708,10 @@ const Board = () => {
   const fadingLasersRef = useRef([]);
   const animationFrameRef = useRef(null);
   const twoFingerRef = useRef({ downTime: 0, moved: false, startDist: 0, startCenter: null, lastTapTime: 0 });
+  // Palm rejection: when the pen last touched, and where the view was when the
+  // current touch gesture began (so it can be put back if it was the palm).
+  const lastPenTimeRef = useRef(0);
+  const touchViewRef = useRef(null);
   const lastPinchDist = useRef(null);
   const lastPinchCenter = useRef(null);
 
@@ -1014,14 +1057,9 @@ const Board = () => {
             const drawFreehand = (points) => {
                 if (!points || points.length === 0) return;
 
-                // Get stroke outline polygon
-                const strokePoints = getStroke(points, {
-                    size: el.size || 5,
-                    thinning: 0.5,
-                    smoothing: 0.5,
-                    streamline: 0.5,
-                    simulatePressure: true
-                });
+                // Get stroke outline polygon. Only the stroke still under the pen
+                // is unfinished.
+                const strokePoints = freehandOutline(points, el.size || 5, el !== currentPath.current);
 
                 const pathData = getSvgPathFromStroke(strokePoints);
                 if (pathData) {
@@ -1580,8 +1618,10 @@ const Board = () => {
 
   const getMousePos = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
-    const rawX = (e.clientX - rect.left - pan.x) / zoom;
-    const rawY = (e.clientY - rect.top - pan.y) / zoom;
+    // Via the refs: they are already correct in the same event that restores the
+    // view after a palm gesture, where the render-time values are one frame stale.
+    const rawX = (e.clientX - rect.left - panRef.current.x) / zoomRef.current;
+    const rawY = (e.clientY - rect.top - panRef.current.y) / zoomRef.current;
     return {
       x: Math.round(rawX * 10) / 10,
       y: Math.round(rawY * 10) / 10,
@@ -1601,9 +1641,30 @@ const Board = () => {
     if (activePointerType.current === 'pen' && e.pointerType === 'touch') {
       return;
     }
+    // ...and the same hand shifting in the moment between two strokes.
+    if (e.pointerType === 'touch' && Date.now() - lastPenTimeRef.current < PALM_GRACE_MS) {
+      return;
+    }
 
     // Always prioritize Apple Pencil / Pen
     if (e.pointerType === 'pen') {
+      lastPenTimeRef.current = Date.now();
+      // The palm usually lands a moment before the pen. Whatever it started - a pan
+      // in Pen Mode, a pinch if it touched in two places - was never meant. A pan
+      // left running here was the worst of it: the pen then dragged the board
+      // around instead of writing. Stop it and put the view back where it was.
+      if (isPanningRef.current) setPanning(false);
+      lastPinchDist.current = null;
+      lastPinchCenter.current = null;
+      twoFingerRef.current.downTime = 0;
+      const before = touchViewRef.current;
+      touchViewRef.current = null;
+      if (before && [...activePointers.current.values()].some(p => p.type === 'touch')) {
+        zoomRef.current = before.zoom;
+        panRef.current = before.pan;
+        setZoom(before.zoom);
+        setPan(before.pan);
+      }
       activePointerType.current = 'pen';
       activePointerId.current = e.pointerId;
       // Clear touch pointers so palm doesn't trigger two-finger gesture
@@ -1614,8 +1675,11 @@ const Board = () => {
 
       // Two-finger gestures (pinch zoom / two-finger undo) - ONLY for touches when no pen is drawing
       const touchPointers = Array.from(activePointers.current.values()).filter(p => p.type === 'touch');
+      if (e.pointerType === 'touch' && touchPointers.length === 1) {
+        touchViewRef.current = { pan: panRef.current, zoom: zoomRef.current };
+      }
       if (touchPointers.length === 2 && activePointerType.current !== 'pen') {
-        setIsPanning(false);
+        setPanning(false);
         isDrawing.current = false;
         currentPath.current = null;
         if (dragContext.current) {
@@ -1658,7 +1722,7 @@ const Board = () => {
     // viewOnly lands here too, so a locked board is pan-only: no drawing, no
     // selecting, no dragging, without having to guard each of those branches.
     if (viewOnly || e.button === 1 || e.altKey || currentTool === 'pan' || (penMode && e.pointerType === 'touch')) {
-      setIsPanning(true);
+      setPanning(true);
       startPoint.current = { x: e.clientX, y: e.clientY };
       safeSetPointerCapture(e.target, e.pointerId);
       return;
@@ -2020,6 +2084,11 @@ const Board = () => {
     if (activePointers.current.has(e.pointerId)) {
       activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     }
+    // Only while it is on the glass: a hovering Pencil must not block two-finger
+    // gestures made with the other hand.
+    if (e.pointerType === 'pen' && activePointerType.current === 'pen') {
+      lastPenTimeRef.current = Date.now();
+    }
 
     // Pinch to zoom: ONLY for touch pointers when pen is not drawing
     const touchPointers = Array.from(activePointers.current.values()).filter(p => p.type === 'touch');
@@ -2093,7 +2162,7 @@ const Board = () => {
 
     if (activePointerId.current !== e.pointerId) return; // Ignore other pointers
 
-    if (isPanning) {
+    if (isPanningRef.current) {
       const dx = e.clientX - startPoint.current.x;
       const dy = e.clientY - startPoint.current.y;
       setPan(prevPan => clampPan(prevPan.x + dx, prevPan.y + dy, zoom));
@@ -2378,7 +2447,17 @@ const Board = () => {
       } else if (currentPath.current && currentPath.current.isSnappedAngle) {
           currentPath.current.points[currentPath.current.points.length - 1] = pos;
       } else {
-          currentPath.current.points.push(pos);
+          // The browser folds several pen samples into each pointermove: an Apple
+          // Pencil reports 240 a second, Safari delivers 60. Keeping only the last
+          // one turned quick curves into polygons, so take them all.
+          const folded = e.nativeEvent?.getCoalescedEvents?.() || [];
+          const pts = currentPath.current.points;
+          const minGap = MIN_POINT_GAP_PX / zoomRef.current;
+          for (const p of (folded.length ? folded.map(getMousePos) : [pos])) {
+            const prev = pts[pts.length - 1];
+            if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < minGap) continue;
+            pts.push(p);
+          }
       }
       currentPath.current.path2d = null;
 
@@ -2444,6 +2523,9 @@ const Board = () => {
     activePointers.current.delete(e.pointerId);
 
     const touchPointersAfter = Array.from(activePointers.current.values()).filter(p => p.type === 'touch');
+    if (e.pointerType === 'pen') lastPenTimeRef.current = Date.now();
+    // The gesture finished on its own, so it was a real one: nothing to put back.
+    if (touchPointersAfter.length === 0) touchViewRef.current = null;
     if (wasTwoFingers && touchPointersAfter.length === 1) {
         const tf = twoFingerRef.current;
         const now = Date.now();
@@ -2475,8 +2557,8 @@ const Board = () => {
         e.target.releasePointerCapture(e.pointerId);
       }
     } catch {}
-    if (isPanning) {
-      setIsPanning(false);
+    if (isPanningRef.current) {
+      setPanning(false);
       return;
     }
 
@@ -2577,7 +2659,9 @@ const Board = () => {
       // Don't save laser strokes to the permanent board elements
       if (stroke.tool !== 'laser') {
         const myAuthor = user?.username || String(user?.id) || 'me';
-        stroke = { ...stroke, author: stroke.author || myAuthor };
+        // Drop the cached live outline: the finished stroke is drawn to its true
+        // end, and a Path2D means nothing to the server or the other clients.
+        stroke = { ...stroke, author: stroke.author || myAuthor, path2d: undefined };
         // Optimistic update for zero-flicker rendering
         elementsRef.current = [...elementsRef.current, stroke];
 
@@ -2599,6 +2683,9 @@ const Board = () => {
     // Clear current path
     isDrawing.current = false;
     currentPath.current = null;
+    // The hold-to-snap timer belongs to the stroke that just ended. Left running,
+    // it fired inside whichever stroke was started next.
+    if (snapShapeTimeoutRef.current) clearTimeout(snapShapeTimeoutRef.current);
 
     // Clear the progress on other clients
     sentStrokeIdRef.current = null;

@@ -131,7 +131,19 @@ const run = async () => {
   assert.ok(await notCleared, 'a locked board must not let a student clear it');
   assert.ok(onBoard('kru-lesson'), 'a student must not wipe away the lesson');
 
-  console.log('teacher-board-lock self-check: all 7 groups passed');
+  // --- 8. The teacher's connection dropping leaves the board as they set it -------
+  // It used to re-lock, so a wifi blip on the teacher's iPad stopped the whole class.
+  const reopened = once(student, 'student-write-allowed');
+  teacher.emit('allow-student-write', true);
+  assert.strictEqual(await reopened, true, 'the teacher can unlock again');
+  const noRelock = silentFor(student, 'student-write-allowed', 500);
+  teacher.disconnect();
+  assert.ok(await noRelock, 'a teacher dropping out must not re-lock the board');
+  student.emit('draw-stroke', { boardId: TB, stroke: stroke('after-drop'), socketId: student.id });
+  await new Promise(r => setTimeout(r, 300));
+  assert.ok(onBoard('after-drop'), 'students keep writing while the teacher is reconnecting');
+
+  console.log('teacher-board-lock self-check: all 8 groups passed');
   process.exit(0);
 };
 

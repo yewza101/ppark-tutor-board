@@ -3702,13 +3702,13 @@ const Board = () => {
       </div>
       {!isReadonly && (
         <div
-          className="absolute top-4 left-4 z-50 flex flex-col md:flex-row gap-2 items-start"
+          className="absolute top-4 left-4 z-50 flex flex-col gap-2 items-start"
           onPointerDown={(e) => e.stopPropagation()}
           onPointerMove={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
         >
           {user?.role === 'admin' ? (
-            <div className="flex items-center gap-1.5 md:gap-2">
+            <div className="min-h-9 flex items-center gap-1.5 md:gap-2">
               <button
                 onClick={(e) => { e.stopPropagation(); navigate('/admin'); }}
                 className="flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 bg-white/90 backdrop-blur shadow-lg border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 font-medium transition-colors text-xs md:text-sm"
@@ -3725,28 +3725,6 @@ const Board = () => {
                   <ArrowLeft size={18} /> <span className="hidden 2xl:inline">Monitor</span>
                 </button>
               )}
-              {onTeacherBoard && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const next = !studentWriteAllowed;
-                    socket?.emit('allow-student-write', next);
-                    showToast(next ? 'นักเรียนเขียนบนบอร์ดนี้ได้แล้ว ✏️' : 'ล็อกบอร์ดแล้ว นักเรียนดูได้อย่างเดียว 🔒');
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 backdrop-blur shadow-lg border rounded-2xl font-medium transition-colors text-xs md:text-sm ${
-                    studentWriteAllowed
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                      : 'bg-white/90 text-gray-700 border-gray-100 hover:bg-gray-50'
-                  }`}
-                  title={studentWriteAllowed ? 'ปิดสิทธิ์เขียนของนักเรียน (Lock)' : 'อนุญาตให้นักเรียนเขียนบนบอร์ดครู (Unlock)'}
-                >
-                  {studentWriteAllowed ? <Unlock size={18} /> : <Lock size={18} />}
-                  <span className="hidden 2xl:inline">
-                    {studentWriteAllowed ? 'นักเรียนเขียนได้' : 'นักเรียนดูอย่างเดียว'}
-                  </span>
-                </button>
-              )}
-
               <button
                 onClick={trackStudentCursor}
                 className="flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 bg-indigo-50/90 backdrop-blur shadow-lg border border-indigo-100 rounded-2xl text-indigo-700 hover:bg-indigo-100 font-medium transition-colors text-xs md:text-sm"
@@ -3757,44 +3735,7 @@ const Board = () => {
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 md:gap-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (studentId.startsWith('teacher_board')) {
-                    navigate(`/board/${user.id}`);
-                  } else {
-                    const tb = user?.group_name ? `/board/teacher_board_${encodeURIComponent(user.group_name)}` : '/board/teacher_board';
-                    navigate(tb);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 backdrop-blur shadow-lg border rounded-2xl font-medium transition-colors text-xs md:text-sm ${
-                  studentId.startsWith('teacher_board')
-                    ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100'
-                    : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
-                }`}
-                title={studentId.startsWith('teacher_board') ? 'กลับกระดานส่วนตัว' : 'ไปที่บอร์ดของครู (Teacher Board)'}
-              >
-                <ArrowLeft size={18} className={studentId.startsWith('teacher_board') ? '' : 'rotate-180'} />
-                <span className="hidden 2xl:inline">
-                  {studentId.startsWith('teacher_board') ? 'กระดานส่วนตัว' : 'บอร์ดครู'}
-                </span>
-              </button>
-
-              {onTeacherBoard && (
-                <span
-                  className={`flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 backdrop-blur shadow-lg border rounded-2xl font-medium text-xs md:text-sm ${
-                    studentWriteAllowed
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-amber-50 text-amber-700 border-amber-200'
-                  }`}
-                  title={studentWriteAllowed ? 'ครูอนุญาตให้เขียนได้' : 'รอครูอนุญาตให้เขียน'}
-                >
-                  {studentWriteAllowed ? <Pencil size={16} /> : <Lock size={16} />}
-                  <span>{studentWriteAllowed ? 'เขียนได้' : 'ดูอย่างเดียว'}</span>
-                </span>
-              )}
-
+            <div className="min-h-9 flex items-center gap-1.5 md:gap-2">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -3829,6 +3770,69 @@ const Board = () => {
                 </button>
               )}
             </div>
+          )}
+
+          {/* The write lock gets its own row under the buttons: labelled, it is too
+              wide for the top row on an iPad, where it ran into the toolbar. */}
+          {onTeacherBoard && user?.role === 'admin' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = !studentWriteAllowed;
+                socket?.emit('allow-student-write', next);
+                showToast(next ? 'นักเรียนเขียนบนบอร์ดนี้ได้แล้ว ✏️' : 'ล็อกบอร์ดแล้ว นักเรียนดูได้อย่างเดียว 🔒');
+              }}
+              className={`mt-3 flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 backdrop-blur shadow-lg border rounded-2xl font-medium transition-colors text-xs md:text-sm ${
+                studentWriteAllowed
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                  : 'bg-white/90 text-gray-700 border-gray-100 hover:bg-gray-50'
+              }`}
+              title={studentWriteAllowed ? 'ปิดสิทธิ์เขียนของนักเรียน (Lock)' : 'อนุญาตให้นักเรียนเขียนบนบอร์ดครู (Unlock)'}
+            >
+              {studentWriteAllowed ? <Unlock size={18} /> : <Lock size={18} />}
+              {/* Always labelled: an unlabelled padlock on an iPad was easy to miss
+                  entirely, which read as the feature having disappeared. */}
+              <span className="whitespace-nowrap">
+                {studentWriteAllowed ? 'นักเรียนเขียนได้' : 'นักเรียนดูอย่างเดียว'}
+              </span>
+            </button>
+          )}
+          {/* A student's way to the teacher board and back. Labelled, so it lives in
+              this row: in the top row it ran into the toolbar on an iPad held upright. */}
+          {user?.role !== 'admin' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onTeacherBoard) {
+                  navigate(`/board/${user.id}`);
+                } else {
+                  const tb = user?.group_name ? `/board/teacher_board_${encodeURIComponent(user.group_name)}` : '/board/teacher_board';
+                  navigate(tb);
+                }
+              }}
+              className={`mt-3 flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 backdrop-blur shadow-lg border rounded-2xl font-medium transition-colors text-xs md:text-sm ${
+                onTeacherBoard
+                  ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100'
+                  : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
+              }`}
+              title={onTeacherBoard ? 'กลับกระดานส่วนตัว' : 'ไปที่บอร์ดของครู (Teacher Board)'}
+            >
+              <ArrowLeft size={18} className={onTeacherBoard ? '' : 'rotate-180'} />
+              <span className="whitespace-nowrap">{onTeacherBoard ? 'กระดานส่วนตัว' : 'บอร์ดครู'}</span>
+            </button>
+          )}
+          {onTeacherBoard && user?.role !== 'admin' && (
+            <span
+              className={`flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 backdrop-blur shadow-lg border rounded-2xl font-medium text-xs md:text-sm ${
+                studentWriteAllowed
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}
+              title={studentWriteAllowed ? 'ครูอนุญาตให้เขียนได้' : 'รอครูอนุญาตให้เขียน'}
+            >
+              {studentWriteAllowed ? <Pencil size={16} /> : <Lock size={16} />}
+              <span>{studentWriteAllowed ? 'เขียนได้' : 'ดูอย่างเดียว'}</span>
+            </span>
           )}
         </div>
       )}

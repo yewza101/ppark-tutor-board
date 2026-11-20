@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import useAuthStore from '../store/useAuthStore';
@@ -15,6 +15,20 @@ const Login = () => {
 
   const login = useAuthStore(state => state.login);
   const navigate = useNavigate();
+
+  // Render's free plan puts the backend to sleep when nobody uses it, and the first
+  // request then waits for it to boot. Start that while the user is still typing.
+  useEffect(() => {
+    fetch(`${API_URL}/healthz`).catch(() => {});
+  }, []);
+
+  // ...and if sign-in is still slow, say why instead of looking frozen.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!loading) { setSlow(false); return; }
+    const t = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(t);
+  }, [loading]);
 
   const handleStudentLogin = async (e) => {
     e.preventDefault();
@@ -86,6 +100,12 @@ const Login = () => {
         {error && (
           <div className="p-3 text-sm text-red-600 bg-red-100 rounded-lg mt-4">
             {error}
+          </div>
+        )}
+
+        {loading && slow && (
+          <div role="status" className="p-3 text-sm text-amber-800 bg-amber-50 rounded-lg mt-4">
+            กำลังปลุกเซิร์ฟเวอร์ ครั้งแรกของวันอาจรอได้ถึง 1 นาที ไม่ต้องกดซ้ำนะครับ
           </div>
         )}
 

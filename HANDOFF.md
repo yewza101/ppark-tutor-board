@@ -249,8 +249,11 @@ sequenceDiagram
   ย้อนกลับ และล้างกระดานไม่ได้
 * **ด่านจริงอยู่ที่เซิร์ฟเวอร์:** ทุก event ที่เปลี่ยนเนื้อหากระดานผ่าน `mayDrawBoard()` ที่เดียว
   ดังนั้นต่อให้ไคลเอนต์ถูกแก้ก็ยังเขียนไม่ได้
-* สถานะเก็บในหน่วยความจำ ไม่ได้เขียนลง DB: เซิร์ฟเวอร์รีสตาร์ตหรือครูหลุดจากห้อง บอร์ดจะกลับไปล็อกเองเสมอ
-  (กันเด็กเขียนทับบทเรียนตอนครูไม่อยู่)
+* สถานะคงอยู่ตามที่ครูตั้งไว้ จนกว่าครูจะกดเปลี่ยนเอง **แม้เน็ตของครูหลุด** (เดิมครูหลุดแล้วล็อกกลับเอง
+  ผลคือ wifi โรงเรียนกระตุกหรือ iPad ครูจอดับ เด็กทั้งห้องก็เขียนไม่ได้ทันที ดูเหมือนฟีเจอร์หายไป)
+* สถานะเก็บในหน่วยความจำ ไม่ได้เขียนลง DB: ถ้าเซิร์ฟเวอร์รีสตาร์ต (Render free plan หลับเมื่อไม่มีคนใช้) จะกลับไปล็อก
+* ปุ่มของครูและปุ่ม "บอร์ดครู" ของนักเรียน **มีข้อความกำกับเสมอ** เดิมซ่อนข้อความบนจอเล็กกว่า 1536px คือ iPad ทุกรุ่น
+  เหลือแค่ไอคอนกุญแจ/ลูกศรที่ไม่มีใครรู้ว่าคืออะไร
 
 ### 7.5 Live Presentation Mode (โหมดถ่ายทอดสด)
 * เมื่อครูกดปุ่ม **Live Presentation** บน Toolbar กระดานของครู ระบบจะกระจายสัญญาณ `force-presentation`
@@ -524,7 +527,7 @@ MASTER_ADMIN_CODE=
 
 #### Frontend (`/frontend/.env`):
 ```env
-VITE_API_URL=https://your-backend-domain.up.railway.app
+VITE_API_URL=https://ppark-backend.onrender.com
 
 # ไม่บังคับ แต่แนะนำมาก: ถ้ามีแค่ STUN นักเรียนที่อยู่หลัง NAT แบบ symmetric
 # หรือ Firewall โรงเรียน จะต่อเสียงหากันไม่ได้เลย
@@ -532,6 +535,36 @@ VITE_API_URL=https://your-backend-domain.up.railway.app
 # VITE_TURN_USERNAME=
 # VITE_TURN_CREDENTIAL=
 ```
+
+### 11.2.1 Backend บน Render (ย้ายกลับจาก Railway, พ.ย. 2026)
+
+Railway ปิดไปแล้ว Backend ตัวที่ใช้งานคือ **`https://ppark-backend.onrender.com`**
+(`ppark-tutor-backend.onrender.com` ไม่มีแล้ว ตอบ 404)
+
+| ตั้งค่า | ค่า |
+|---|---|
+| Root Directory | `backend` |
+| Build Command | `npm install` |
+| Start Command | `node server.js` |
+| Health Check Path | `/healthz` |
+| Region | Singapore |
+
+**Environment Variables บน Render:** `JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_KEY`
+(ไม่ต้องตั้ง `PORT` Render ใส่ให้เอง, `MASTER_ADMIN_*` ใช้แค่ตอนสร้างบัญชี master ครั้งแรก ซึ่งมีแถวใน DB แล้ว)
+
+> [!CAUTION]
+> **ห้ามใช้ `JWT_SECRET=super-secret-jwt-key`** เด็ดขาด ค่านี้เคยเป็น fallback ในโค้ด อยู่ใน Git history
+> สาธารณะ ใครรู้ก็ปลอม Token ครูได้ทุกคน ให้สร้างใหม่ด้วยคำสั่งข้างบนทุกครั้งที่ย้าย host
+> (เปลี่ยนแล้วทุกคนแค่ต้องล็อกอินใหม่ ไม่มีข้อมูลหาย)
+
+**สิ่งที่ต้องรู้เกี่ยวกับ Render:**
+* **Auto-deploy เฉพาะเมื่อไฟล์ใน `backend/` เปลี่ยน** — commit ที่แก้แค่ frontend จะไม่ redeploy
+  ดังนั้น `commit` ใน `/healthz` คือ commit ล่าสุดที่แตะ backend ไม่จำเป็นต้องตรงกับหัว `main`
+* **Free plan หลับเมื่อไม่มีคนใช้** — คนแรกของวันรอ ~30–60 วิ หน้า Login จึงยิง `/healthz` ไปปลุกตั้งแต่เปิดหน้า
+  และถ้าล็อกอินช้าเกิน 4 วิ จะขึ้นข้อความบอกว่ากำลังปลุกเซิร์ฟเวอร์ ระหว่างคาบมี socket ค้างอยู่ จึงไม่หลับ
+* **โควต้าแบนด์วิดท์รายเดือน** — ที่เคยเต็มสมัยก่อน ส่วนใหญ่มาจาก `draw-progress` ที่แก้แล้ว (ดู 10.5 E)
+  แต่ fix เส้นสมูธ (10.7) เก็บจุดจากปากกาถี่ขึ้น ข้อมูลต่อเส้นเพิ่มขึ้นราว 2 เท่า ถ้าโควต้าเริ่มตึง
+  ปรับ `MIN_POINT_GAP_PX` ใน `Board.jsx` ให้ห่างขึ้นได้ทันที
 
 ### 11.3 คำสั่งรันในเครื่องพัฒนา (Local Development)
 
@@ -631,7 +664,7 @@ npm --prefix frontend run build
 | `board-joined` | Server → Client | `{ boardId }` | **เพิ่มใหม่** ยืนยันว่าเข้าห้องสำเร็จ (ให้ไคลเอนต์รอก่อนส่ง viewport) |
 | `join-board-denied` | Server → Client | `{ boardId }` | **เพิ่มใหม่** ไม่มีสิทธิ์เข้ากระดานนี้ |
 | `allow-student-write` | Client → Server | `boolean` | **เพิ่มใหม่** ครูเปิด/ปิดสิทธิ์เขียนบนบอร์ดครูที่ตัวเองอยู่ (ครูเท่านั้น) |
-| `student-write-allowed` | Server → Client | `boolean` | **เพิ่มใหม่** สถานะสิทธิ์เขียนปัจจุบันของบอร์ดครู (ส่งตอนเข้าห้อง, ตอนครูกดสลับ และตอนครูหลุด) |
+| `student-write-allowed` | Server → Client | `boolean` | **เพิ่มใหม่** สถานะสิทธิ์เขียนปัจจุบันของบอร์ดครู (ส่งตอนเข้าห้อง และตอนครูกดสลับ) |
 
 ---
 

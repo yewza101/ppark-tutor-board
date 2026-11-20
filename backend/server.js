@@ -109,8 +109,11 @@ const mayWriteBoard = (socket, boardId) => {
 // Teacher boards are readable by the whole class, but writable by students only
 // while the teacher has unlocked them. Default locked: a student scribbling over
 // a live lesson cannot be undone by the teacher.
-// ponytail: in-memory, so a restart re-locks every board. Fine - the teacher is
-// present when it matters; persist it alongside the board if that ever annoys.
+// Once set, it stays as the teacher left it, even if their own connection drops.
+// It used to re-lock then, and every school-wifi blip or iPad sleep on the
+// teacher's side silently took writing away from the whole class.
+// ponytail: in-memory, so a server restart re-locks every board. Persist it next to
+// the board if Render's free-plan restarts ever land in the middle of a lesson.
 const studentWriteBoards = new Set();
 
 // Presence (cursor, viewport) only needs mayWriteBoard. Anything that changes what
@@ -125,7 +128,9 @@ const mayDrawBoard = (socket, boardId) => {
 
 // Public health check. There was no unauthenticated endpoint that returns 200,
 // so a host's health check had nothing to probe and "which commit is actually
-// running?" could only be inferred from behaviour. Railway injects the git SHA.
+// running?" could only be inferred from behaviour. Render (and Railway) inject the
+// git SHA. Render only redeploys when something under backend/ changes, so this is
+// the last *backend* commit, which can be older than the tip of main.
 const STARTED_AT = Date.now();
 app.get('/healthz', async (req, res) => {
   res.json({
@@ -576,12 +581,9 @@ io.on('connection', (socket) => {
       }
     }
 
-    // A teacher dropping out must not leave their class stuck in presentation mode,
-    // nor leave the teacher board unlocked with nobody able to lock it again.
+    // A teacher dropping out must not leave their class stuck in presentation mode.
+    // (The student-write lock is deliberately left alone: see studentWriteBoards.)
     if (isAdminSocket(socket)) {
-      if (isTeacherBoard(boardId) && studentWriteBoards.delete(boardId)) {
-        io.to(`board_${boardId}`).emit('student-write-allowed', false);
-      }
       const group = groupOfBoard(boardId) || socket.user.group_name || 'General';
       if (presentingGroups.delete(group)) {
         for (const [sid, other] of io.sockets.sockets) {
